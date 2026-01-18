@@ -10,10 +10,10 @@ deepseek-chat-tracker/
 # │   └── popup.css
 # ├── content.js
 # ├── options/
-│   ├── options.html
-│   ├── options.js
-│   └── options.css
-└── icons/
-    ├── icon16.png
-    ├── icon48.png
-    └── icon128.png
+# │   ├── options.html
+# │   ├── options.js
+# │   └── options.css
+# └── icons/
+#     ├── icon16.png
+#     ├── icon48.png
+#     └── icon128.png
