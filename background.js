@@ -1,88 +1,115 @@
-// Background service worker
+// Background script for Manifest V2
 let chatStats = {
   messagesToday: 0,
   lastReset: new Date().toDateString(),
-  chatLimit: 30, // Default DeepSeek limit
+  chatLimit: 30,
   chats: []
 };
 
+// Initialize on install
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('DeepSeek Tracker installed');
+  const today = new Date().toDateString();
+  chatStats = {
+    messagesToday: 0,
+    lastReset: today,
+    chatLimit: 30,
+    chats: []
+  };
+  chrome.storage.local.set({ chatStats });
+  
+  // Create daily reset alarm
+  chrome.alarms.create('dailyReset', { periodInMinutes: 1440 });
+});
+
 // Load saved data
-chrome.storage.local.get(['chatStats', 'settings'], (result) => {
+chrome.storage.local.get(['chatStats'], (result) => {
   if (result.chatStats) {
     chatStats = result.chatStats;
     
-    // Reset counter if it's a new day
+    // Reset if new day
     const today = new Date().toDateString();
     if (chatStats.lastReset !== today) {
       chatStats.messagesToday = 0;
       chatStats.lastReset = today;
-      saveStats();
+      chrome.storage.local.set({ chatStats });
     }
   }
 });
 
-// Save stats to storage
-function saveStats() {
-  chrome.storage.local.set({ chatStats });
-}
-
-// Check and create daily reset alarm
-chrome.alarms.create('dailyReset', { periodInMinutes: 1440 });
-
+// Handle alarms
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'dailyReset') {
     const today = new Date().toDateString();
     if (chatStats.lastReset !== today) {
       chatStats.messagesToday = 0;
       chatStats.lastReset = today;
-      saveStats();
+      chrome.storage.local.set({ chatStats });
+      console.log('Daily reset completed');
     }
   }
 });
 
-// Listen for message count updates
+// Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('Message received:', request.type);
+  
   if (request.type === 'NEW_MESSAGE') {
     chatStats.messagesToday++;
-    chatStats.chats.push({
-      timestamp: new Date().toISOString(),
-      url: sender.tab?.url || 'unknown',
-      messageCount: chatStats.messagesToday
+    
+    // Save to storage
+    chrome.storage.local.set({ chatStats }, () => {
+      console.log('Updated count:', chatStats.messagesToday);
+      
+      // Send notification at 80% usage
+      if (chatStats.messagesToday >= Math.floor(chatStats.chatLimit * 0.8)) {
+        const remaining = chatStats.chatLimit - chatStats.messagesToday;
+        
+        // Firefox uses different notification API
+        if (typeof browser !== 'undefined' && browser.notifications) {
+          // Firefox
+          browser.notifications.create({
+            type: 'basic',
+            iconUrl: 'icons/icon128.png',
+            title: 'DeepSeek Limit Warning',
+            message: `Messages: ${chatStats.messagesToday}/${chatStats.chatLimit}. ${remaining} remaining.`
+          });
+        } else {
+          // Chrome
+          chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icons/icon128.png',
+            title: 'DeepSeek Limit Warning',
+            message: `Messages: ${chatStats.messagesToday}/${chatStats.chatLimit}. ${remaining} remaining.`
+          });
+        }
+      }
+      
+      sendResponse({ success: true, count: chatStats.messagesToday });
     });
     
-    // Keep only last 100 chats
-    if (chatStats.chats.length > 100) {
-      chatStats.chats = chatStats.chats.slice(-100);
-    }
-    
-    saveStats();
-    
-    // Check if approaching limit
-    const warningThreshold = Math.floor(chatStats.chatLimit * 0.8); // 80% of limit
-    if (chatStats.messagesToday >= warningThreshold) {
-      const remaining = chatStats.chatLimit - chatStats.messagesToday;
-      
-      // Show notification
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon128.png',
-        title: 'DeepSeek Limit Warning',
-        message: `You've used ${chatStats.messagesToday}/${chatStats.chatLimit} messages. ${remaining} remaining.`
-      });
-    }
-    
-    sendResponse({ success: true });
+    return true; // Keep message channel open
   }
   
   if (request.type === 'GET_STATS') {
     sendResponse(chatStats);
+    return true;
   }
   
-  if (request.type === 'UPDATE_SETTINGS') {
-    chatStats.chatLimit = request.limit || chatStats.chatLimit;
-    saveStats();
-    sendResponse({ success: true });
+  if (request.type === 'RESET_COUNTER') {
+    chatStats.messagesToday = 0;
+    chatStats.lastReset = new Date().toDateString();
+    chrome.storage.local.set({ chatStats }, () => {
+      sendResponse({ success: true });
+    });
+    return true;
   }
   
-  return true; // Keep message channel open for async response
+  if (request.type === 'UPDATE_LIMIT') {
+    chatStats.chatLimit = request.limit;
+    chrome.storage.local.set({ chatStats }, () => {
+      sendResponse({ success: true });
+    });
+    return true;
+  }
 });
