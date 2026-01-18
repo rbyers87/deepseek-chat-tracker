@@ -1,89 +1,109 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const elements = {
-    messagesCount: document.getElementById('messagesCount'),
-    dailyLimit: document.getElementById('dailyLimit'),
-    remainingCount: document.getElementById('remainingCount'),
-    progressBar: document.getElementById('progressBar'),
-    percentage: document.getElementById('percentage'),
-    lastReset: document.getElementById('lastReset'),
-    resetButton: document.getElementById('resetButton'),
-    optionsButton: document.getElementById('optionsButton'),
-    exportButton: document.getElementById('exportButton'),
-    statusIndicator: document.getElementById('statusIndicator')
-  };
-
-  // Load and display stats
+  // Elements
+  const todayCount = document.getElementById('todayCount');
+  const dailyLimit = document.getElementById('dailyLimit');
+  const remaining = document.getElementById('remaining');
+  const progressBar = document.getElementById('progressBar');
+  const percentage = document.getElementById('percentage');
+  const updateTime = document.getElementById('updateTime');
+  const statusDot = document.getElementById('statusDot');
+  const resetBtn = document.getElementById('resetBtn');
+  const limitInput = document.getElementById('limitInput');
+  const saveLimitBtn = document.getElementById('saveLimitBtn');
+  
+  // Get runtime API (works for both Chrome and Firefox)
+  const runtime = typeof browser !== 'undefined' ? browser.runtime : chrome.runtime;
+  
+  // Load stats from background
   function loadStats() {
-    chrome.runtime.sendMessage({ type: 'GET_STATS' }, (response) => {
+    runtime.sendMessage({ type: 'GET_STATS' }, (response) => {
+      if (runtime.lastError) {
+        console.error('Error:', runtime.lastError);
+        return;
+      }
+      
       if (response) {
         updateDisplay(response);
       }
     });
   }
-
+  
+  // Update display with stats
   function updateDisplay(stats) {
-    elements.messagesCount.textContent = stats.messagesToday;
-    elements.dailyLimit.textContent = stats.chatLimit;
+    const used = stats.messagesToday || 0;
+    const limit = stats.chatLimit || 30;
+    const remainingCount = Math.max(0, limit - used);
     
-    const remaining = Math.max(0, stats.chatLimit - stats.messagesToday);
-    elements.remainingCount.textContent = remaining;
+    // Update text
+    todayCount.textContent = used;
+    dailyLimit.textContent = limit;
+    remaining.textContent = remainingCount;
     
-    const percentage = Math.min(100, (stats.messagesToday / stats.chatLimit) * 100);
-    elements.progressBar.style.width = `${percentage}%`;
-    elements.percentage.textContent = `${Math.round(percentage)}%`;
+    // Update progress bar
+    const percent = Math.min(100, (used / limit) * 100);
+    progressBar.style.width = `${percent}%`;
+    percentage.textContent = `${Math.round(percent)}%`;
     
-    // Update status indicator color
-    if (percentage >= 90) {
-      elements.statusIndicator.style.background = '#ef4444'; // Red
-    } else if (percentage >= 70) {
-      elements.statusIndicator.style.background = '#f59e0b'; // Orange
+    // Update status dot color
+    if (percent >= 90) {
+      statusDot.style.background = '#f44336';
+      statusDot.style.boxShadow = '0 0 5px #f44336';
+    } else if (percent >= 70) {
+      statusDot.style.background = '#ff9800';
+      statusDot.style.boxShadow = '0 0 5px #ff9800';
     } else {
-      elements.statusIndicator.style.background = '#4ade80'; // Green
+      statusDot.style.background = '#4CAF50';
+      statusDot.style.boxShadow = '0 0 5px #4CAF50';
     }
     
-    // Format last reset date
-    const resetDate = new Date(stats.lastReset);
-    const today = new Date();
-    if (resetDate.toDateString() === today.toDateString()) {
-      elements.lastReset.textContent = 'Today';
-    } else {
-      elements.lastReset.textContent = resetDate.toLocaleDateString();
-    }
+    // Update time
+    updateTime.textContent = new Date().toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    // Update limit input
+    limitInput.value = limit;
   }
-
+  
   // Event Listeners
-  elements.resetButton.addEventListener('click', () => {
-    if (confirm('Reset today\'s message count?')) {
-      chrome.runtime.sendMessage({ 
-        type: 'UPDATE_SETTINGS',
-        reset: true 
-      }, () => {
-        loadStats();
+  resetBtn.addEventListener('click', () => {
+    if (confirm('Reset today\'s message count to zero?')) {
+      runtime.sendMessage({ type: 'RESET_COUNTER' }, (response) => {
+        if (response && response.success) {
+          loadStats();
+        }
       });
     }
   });
-
-  elements.optionsButton.addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
+  
+  saveLimitBtn.addEventListener('click', () => {
+    const newLimit = parseInt(limitInput.value);
+    if (newLimit > 0 && newLimit <= 999) {
+      runtime.sendMessage({ 
+        type: 'UPDATE_LIMIT', 
+        limit: newLimit 
+      }, (response) => {
+        if (response && response.success) {
+          loadStats();
+          // Show confirmation
+          const originalText = saveLimitBtn.textContent;
+          saveLimitBtn.textContent = 'Saved!';
+          saveLimitBtn.style.background = '#4CAF50';
+          setTimeout(() => {
+            saveLimitBtn.textContent = originalText;
+            saveLimitBtn.style.background = '';
+          }, 1500);
+        }
+      });
+    } else {
+      alert('Please enter a valid number between 1 and 999');
+    }
   });
-
-  elements.exportButton.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'GET_STATS' }, (stats) => {
-      const dataStr = JSON.stringify(stats, null, 2);
-      const dataUri = `data:application/json;charset=utf-8,${encodeURIComponent(dataStr)}`;
-      
-      const exportFileDefaultName = `deepseek-chat-stats-${new Date().toISOString().slice(0,10)}.json`;
-      
-      const linkElement = document.createElement('a');
-      linkElement.setAttribute('href', dataUri);
-      linkElement.setAttribute('download', exportFileDefaultName);
-      linkElement.click();
-    });
-  });
-
+  
   // Initialize
   loadStats();
   
-  // Update every 5 seconds
-  setInterval(loadStats, 5000);
+  // Auto-refresh every 2 seconds
+  setInterval(loadStats, 2000);
 });
