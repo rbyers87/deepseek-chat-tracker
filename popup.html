@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* CRITICAL: Set explicit dimensions */
+    html, body {
+      width: 320px;
+      height: 400px;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .container {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.3);
+    }
+    
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 5px 0;
+    }
+    
+    .subtitle {
+      font-size: 11px;
+      opacity: 0.8;
+    }
+    
+    .stats-card {
+      background: rgba(255,255,255,0.1);
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      backdrop-filter: blur(10px);
+    }
+    
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .stat-row:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+    
+    .stat-label {
+      opacity: 0.9;
+    }
+    
+    .stat-value {
+      font-weight: bold;
+      font-size: 16px;
+    }
+    
+    .progress-container {
+      margin: 20px 0;
+    }
+    
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    
+    .progress-bar {
+      height: 10px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: #4CAF50;
+      width: 0%;
+      border-radius: 5px;
+      transition: width 0.5s ease;
+    }
+    
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 20px 0;
+    }
+    
+    .btn {
+      padding: 10px;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .btn:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    
+    .btn-primary {
+      background: rgba(255,255,255,0.3);
+      font-weight: 600;
+    }
+    
+    .limit-control {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .limit-input-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    
+    .limit-input {
+      flex: 1;
+      padding: 8px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      color: white;
+      font-size: 13px;
+    }
+    
+    .limit-input::placeholder {
+      color: rgba(255,255,255,0.6);
+    }
+    
+    .status-bar {
+      font-size: 10px;
+      text-align: center;
+      margin-top: 15px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      opacity: 0.7;
+    }
+    
+    .warning {
+      color: #ffcc00;
+      font-weight: bold;
+    }
+    
+    .critical {
+      color: #ff4444;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>DeepSeek Tracker</h1>
+      <div class="subtitle">Track your daily chat usage</div>
+    </div>
+    
+    <div class="stats-card">
+      <div class="stat-row">
+        <span class="stat-label">Messages Today:</span>
+        <span class="stat-value" id="todayCount">0</span>
+      </div>
+      
+      <div class="stat-row">
+        <span class="stat-label">Daily Limit:</span>
+        <span class="stat-value" id="dailyLimit">30</span>
+      </div>
+      
+      <div class="stat-row">
+        <span class="stat-label">Remaining:</span>
+        <span class="stat-value" id="remainingCount">30</span>
+      </div>
+      
+      <div class="progress-container">
+        <div class="progress-header">
+          <span>Daily Usage</span>
+          <span id="percentage">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="buttons">
+      <button class="btn" id="refreshBtn">🔄 Refresh</button>
+      <button class="btn btn-primary" id="resetBtn">🔄 Reset Counter</button>
+      <button class="btn" id="forceResetBtn">🕛 Daily Reset</button>
+      <button class="btn" id="testMsgBtn">💬 Test +1</button>
+    </div>
+    
+    <div class="limit-control">
+      <div style="font-size: 12px; margin-bottom: 8px;">Set Daily Limit:</div>
+      <div class="limit-input-group">
+        <input type="number" id="limitInput" class="limit-input" placeholder="Enter limit" min="1" max="999" value="30">
+        <button class="btn" id="setLimitBtn">Set</button>
+      </div>
+    </div>
+    
+    <div class="status-bar">
+      Last reset: <span id="lastReset">Today</span> • 
+      Updated: <span id="updateTime">--:--</span>
+      <div id="warningMessage"></div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

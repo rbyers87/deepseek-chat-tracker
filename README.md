@@ -81,3 +81,47 @@ Look for message container elements
 Update selectors in content.js
 
 This extension will help you track your usage and prevent unexpected interruptions by giving you warnings before hitting limits!
+
+Key Changes Made:
+
+    Removed window creation code - No more separate window
+
+    Added badge functionality - Shows count on extension icon
+
+    Added updateBadge() function - Updates icon badge with count and colors
+
+    Added tooltip - Shows stats when hovering over icon
+
+    Added GET_BADGE_INFO handler - For popup to get badge info
+
+    Added storage change listener - Syncs across tabs
+
+    Added periodic badge update - Ensures badge stays current
+
+What This Does:
+
+    Auto-resets daily at midnight
+
+    Shows badge with message count on extension icon
+
+    Color-coded badges (green → orange → red based on usage)
+
+    Notifications at 80% and 90% usage
+
+    Tooltip on hover shows stats
+
+    Communicates with popup via messages
+
+    Tracks history of last 30 days
+
+Expected Behavior:
+
+    Extension icon shows message count badge (e.g., "5" for 5 messages)
+
+    Badge color changes: Green (<70%), Orange (70-89%), Red (≥90%)
+
+    Click icon → opens dropdown popup (popup.html)
+
+    Hover over icon → shows tooltip with stats
+
+    Daily auto-reset → badge resets to empty, color goes green
