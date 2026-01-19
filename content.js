@@ -1,240 +1,273 @@
-// DeepSeek Chat Tracker - Content Script
-// Detects messages on DeepSeek chat pages
-
-console.log('DeepSeek Chat Tracker content script loaded');
+// DeepSeek Chat Tracker - Content Script with Chat Session Detection
+console.log('DeepSeek Chat Tracker (Session-aware) loaded');
 
 let messageCount = 0;
+let currentChatId = null;
 let observer = null;
 let lastMessageTime = 0;
-const MESSAGE_DELAY = 1000; // 1 second between messages
+const MESSAGE_DELAY = 1000;
 
-// Function to count user messages in the chat
-function countUserMessages() {
-  // Try various selectors that might match DeepSeek chat messages
+// Detect chat ID from page
+function detectChatId() {
+  // Try multiple methods to identify chat session
+  
+  // 1. From URL
+  const url = window.location.href;
+  const urlObj = new URL(url);
+  let chatId = urlObj.searchParams.get('session') || 
+               urlObj.pathname.split('/').pop();
+  
+  // 2. From page title or content
+  if (!chatId || chatId === 'chat' || chatId === '') {
+    // Look for chat-specific elements
+    const chatElements = document.querySelectorAll([
+      '[data-chat-id]',
+      '[data-session-id]',
+      '[class*="session"]',
+      '[class*="chat-"]',
+      '.conversation-id',
+      '#conversationId'
+    ].join(','));
+    
+    for (const el of chatElements) {
+      const id = el.getAttribute('data-chat-id') || 
+                 el.getAttribute('data-session-id') ||
+                 el.textContent;
+      if (id && id.length < 50) {
+        chatId = id;
+        break;
+      }
+    }
+  }
+  
+  // 3. Generate from page state
+  if (!chatId || chatId === 'chat' || chatId === '') {
+    // Use first message timestamp or page load time
+    const firstMsg = document.querySelector('[class*="message"]');
+    if (firstMsg) {
+      chatId = 'chat_' + Date.now();
+    } else {
+      chatId = 'new_chat_' + Date.now();
+    }
+  }
+  
+  return chatId;
+}
+
+// Check if this is a new chat session
+function checkForNewChatSession() {
+  const newChatId = detectChatId();
+  const url = window.location.href;
+  
+  if (newChatId !== currentChatId) {
+    console.log('New chat session detected:', { 
+      old: currentChatId, 
+      new: newChatId,
+      url: url 
+    });
+    
+    currentChatId = newChatId;
+    messageCount = 0;
+    
+    // Notify background
+    chrome.runtime.sendMessage({
+      type: 'NEW_CHAT_DETECTED',
+      data: {
+        url: url,
+        chatId: newChatId,
+        title: document.title || 'DeepSeek Chat'
+      }
+    });
+    
+    return true;
+  }
+  
+  return false;
+}
+
+// Count messages in current chat
+function countMessages() {
+  // DeepSeek specific selectors
   const selectors = [
-    // DeepSeek specific selectors
     '[data-message-author-role="user"]',
     '.prose',
     '.markdown-body',
-    
-    // General chat message selectors
     '[class*="message"]',
     '[class*="Message"]',
-    'div[class*="user"]',
-    'div[class*="User"]',
-    
-    // Look for message containers
-    'div[class*="chat-message"]',
-    'div[class*="ChatMessage"]',
-    
-    // Look for user avatars or indicators
-    'img[src*="user"]',
-    'div[class*="avatar"]',
-    
-    // Look for send timestamps
-    'time',
-    '[class*="timestamp"]',
-    '[class*="Timestamp"]'
+    'div[class*="user"]'
   ];
   
-  let maxCount = 0;
+  let count = 0;
   
   for (const selector of selectors) {
     try {
       const elements = document.querySelectorAll(selector);
-      if (elements.length > 0) {
-        // Filter to likely user messages
-        const userMessages = Array.from(elements).filter(el => {
-          const text = el.textContent || '';
-          const html = el.innerHTML || '';
-          const classNames = el.className || '';
-          
-          // Check for user indicators
-          return (
-            text.length > 5 && text.length < 5000 && // Reasonable message length
-            (text.includes('You:') || 
-             text.includes('User:') ||
-             classNames.includes('user') ||
-             classNames.includes('User') ||
-             html.includes('user-message') ||
-             html.includes('message-user'))
-          );
-        });
-        
-        maxCount = Math.max(maxCount, userMessages.length);
-      }
+      count = Math.max(count, elements.length);
     } catch (e) {
       // Ignore invalid selectors
     }
   }
   
-  // Fallback: Count all text nodes that look like messages
-  if (maxCount === 0) {
-    const allText = document.body.innerText || '';
-    const lines = allText.split('\n').filter(line => {
-      return line.length > 10 && line.length < 500 && !line.includes('DeepSeek');
-    });
-    maxCount = lines.length;
-  }
-  
-  return maxCount;
+  return count;
 }
 
-// Send message to background script
+// Send message to background
 function sendMessageToBackground() {
   const now = Date.now();
   
-  // Rate limiting: don't send messages too frequently
   if (now - lastMessageTime < MESSAGE_DELAY) {
-    console.log('Rate limited: skipping duplicate message detection');
     return;
   }
   
   lastMessageTime = now;
   
-  const runtime = typeof browser !== 'undefined' ? browser.runtime : chrome.runtime;
+  // First check if we're in a new chat
+  checkForNewChatSession();
   
-  console.log('Sending NEW_MESSAGE to background');
-  
-  runtime.sendMessage({ type: 'NEW_MESSAGE' }, function(response) {
-    if (runtime.lastError) {
-      console.log('Background error:', runtime.lastError.message);
-    } else if (response && response.success) {
-      console.log(`Message count updated: ${response.count}/${response.limit} (${response.remaining} remaining)`);
+  chrome.runtime.sendMessage({
+    type: 'NEW_MESSAGE',
+    data: {
+      url: window.location.href,
+      chatId: currentChatId,
+      timestamp: new Date().toISOString()
+    }
+  }, function(response) {
+    if (response && response.success) {
+      console.log(`Message tracked: ${response.count}/${response.limit}`);
     }
   });
 }
 
-// Check for new messages and report to background
+// Monitor for new messages
 function checkAndReportMessages() {
-  const currentCount = countUserMessages();
-  
-  console.log(`Message check: current=${currentCount}, previous=${messageCount}`);
+  const currentCount = countMessages();
   
   if (currentCount > messageCount) {
     const newMessages = currentCount - messageCount;
-    console.log(`Detected ${newMessages} new message(s). Total: ${currentCount}`);
+    console.log(`Detected ${newMessages} new message(s) in chat ${currentChatId}`);
     
     messageCount = currentCount;
     
-    // Send one message per detection (not per new message)
+    // Send one notification per detection
     sendMessageToBackground();
   }
 }
 
-// Set up mutation observer to detect DOM changes
+// Set up mutation observer
 function initObserver() {
   let timeoutId = null;
   
   observer = new MutationObserver(function(mutations) {
     let shouldCheck = false;
     
-    // Check if any mutation might be a new message
     for (const mutation of mutations) {
       if (mutation.type === 'childList') {
-        // New nodes added
         for (const node of mutation.addedNodes) {
-          if (node.nodeType === 1) { // Element node
-            const tag = node.tagName.toLowerCase();
-            const className = node.className || '';
+          if (node.nodeType === 1) {
             const text = node.textContent || '';
-            
-            // Check if this looks like a chat message
-            if (tag === 'div' || tag === 'p' || tag === 'span') {
-              if (text.length > 5 && text.length < 5000) {
-                shouldCheck = true;
-                break;
-              }
+            if (text.length > 10 && text.length < 5000) {
+              shouldCheck = true;
+              break;
             }
           }
         }
       }
-      
       if (shouldCheck) break;
     }
     
     if (shouldCheck && !timeoutId) {
-      // Debounce checks to avoid spamming
       timeoutId = setTimeout(function() {
         checkAndReportMessages();
         timeoutId = null;
-      }, 800); // Wait 800ms after changes
+      }, 800);
     }
   });
   
-  // Start observing
   observer.observe(document.body, {
     childList: true,
     subtree: true,
     characterData: true
   });
   
-  console.log('Mutation observer started - watching for chat messages');
+  console.log('Mutation observer started');
 }
 
-// Also detect messages via user interactions
-function setupInteractionDetection() {
-  // Listen for send button clicks
+// Detect new chat button clicks
+function setupChatDetection() {
+  // Listen for clicks that might start new chats
   document.addEventListener('click', function(e) {
     const target = e.target;
-    const tagName = target.tagName.toLowerCase();
     const text = target.textContent || '';
-    const parentText = target.parentElement?.textContent || '';
+    const href = target.getAttribute('href') || '';
     
-    // Check if this looks like a send button
-    if (tagName === 'button' || target.getAttribute('role') === 'button') {
-      if (text.toLowerCase().includes('send') ||
-          text.includes('发送') || // Chinese
-          parentText.toLowerCase().includes('send') ||
-          target.getAttribute('aria-label')?.toLowerCase().includes('send')) {
-        
-        console.log('Send button clicked detected');
-        setTimeout(checkAndReportMessages, 1500);
-      }
+    // Look for "New Chat" buttons or links
+    if (text.toLowerCase().includes('new chat') ||
+        text.toLowerCase().includes('new conversation') ||
+        href.includes('new') ||
+        target.getAttribute('aria-label')?.toLowerCase().includes('new chat')) {
+      
+      console.log('New chat button clicked');
+      setTimeout(checkForNewChatSession, 1000);
     }
   });
   
-  // Listen for Enter key in text areas
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      const target = e.target;
-      const tagName = target.tagName.toLowerCase();
-      
-      if (tagName === 'textarea' || target.isContentEditable) {
-        console.log('Enter key detected in text input');
-        setTimeout(checkAndReportMessages, 1500);
-      }
+  // Also check URL changes
+  let lastUrl = window.location.href;
+  setInterval(function() {
+    const currentUrl = window.location.href;
+    if (currentUrl !== lastUrl) {
+      lastUrl = currentUrl;
+      setTimeout(checkForNewChatSession, 500);
     }
-  });
+  }, 1000);
 }
 
-// Initialize when page loads
+// Initialize
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', function() {
-    console.log('DeepSeek page loaded, initializing tracker...');
     setTimeout(function() {
+      // Detect initial chat
+      currentChatId = detectChatId();
+      console.log('Initial chat ID:', currentChatId);
+      
       initObserver();
-      setupInteractionDetection();
-      messageCount = countUserMessages();
-      console.log('Initial message count:', messageCount);
+      setupChatDetection();
+      messageCount = countMessages();
+      
+      // Report initial messages
+      if (messageCount > 0) {
+        sendMessageToBackground();
+      }
     }, 2000);
   });
 } else {
   setTimeout(function() {
-    console.log('DeepSeek page already loaded, initializing tracker...');
+    currentChatId = detectChatId();
+    console.log('Initial chat ID:', currentChatId);
+    
     initObserver();
-    setupInteractionDetection();
-    messageCount = countUserMessages();
-    console.log('Initial message count:', messageCount);
+    setupChatDetection();
+    messageCount = countMessages();
+    
+    if (messageCount > 0) {
+      sendMessageToBackground();
+    }
   }, 2000);
 }
 
-// Clean up on page unload
-window.addEventListener('beforeunload', function() {
-  if (observer) {
-    observer.disconnect();
-    console.log('Observer disconnected');
+// Listen for messages from background
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+  if (request.type === 'CHECK_CHAT_SESSION') {
+    const isNewChat = checkForNewChatSession();
+    sendResponse({ isNewChat: isNewChat, chatId: currentChatId });
   }
 });
 
-console.log('DeepSeek Chat Tracker content script initialization complete');
+// Clean up
+window.addEventListener('beforeunload', function() {
+  if (observer) {
+    observer.disconnect();
+  }
+});
+
+console.log('Content script initialized for chat session tracking');
