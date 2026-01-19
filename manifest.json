@@ -1,36 +1,31 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "DeepSeek Chat Tracker",
   "version": "1.0.0",
-  "description": "Track your DeepSeek chat usage and get warnings",
+  "description": "Track your DeepSeek chat usage",
   
-  "permissions": [
-    "storage",
-    "activeTab",
-    "alarms",
-    "notifications"
-  ],
+  "permissions": ["storage"],
+  
+  "host_permissions": ["*://chat.deepseek.com/*"],
   
   "background": {
-    "scripts": ["background.js"]
+    "service_worker": "background.js"
   },
   
-  "browser_action": {
+  "action": {
     "default_title": "DeepSeek Tracker",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon16.png",
       "48": "icons/icon48.png"
-    },
-    "browser_style": false
+    }
   },
   
   "content_scripts": [
     {
       "matches": ["*://chat.deepseek.com/*"],
-      "js": ["content.js"],
-      "run_at": "document_end"
+      "js": ["content.js"]
     }
   ],
   
