@@ -46,7 +46,7 @@ deepseek-chat-tracker\
   ├── icon16.png # 16x16 toolbar icon\
   ├── icon48.png # 48x48 extension icon\
   └── icon128.png # 128x128 store icon\
-
+  
 text
 
 ## 🚀 Installation
