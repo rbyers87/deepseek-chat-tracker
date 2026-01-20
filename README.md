@@ -36,7 +36,7 @@ A browser extension that tracks your DeepSeek chat token usage, including file u
 - **Persistent storage** across browser sessions
 
 ## 📁 Folder Structure
-deepseek-chat-tracker/
+deepseek-chat-tracker\
  ├── manifest.json # Extension configuration (Chrome V3)\
  ├── background.js # Background script with token tracking\
  ├── content.js # Content script for DeepSeek detection\
