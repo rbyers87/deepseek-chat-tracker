@@ -43,9 +43,9 @@ deepseek-chat-tracker\
  ├── popup.html # Popup interface HTML\
  ├── popup.js # Popup functionality\
  └── icons/ # Extension icons\
- - ├── icon16.png # 16x16 toolbar icon\
- - ├── icon48.png # 48x48 extension icon\
- - └── icon128.png # 128x128 store icon\
+  ├── icon16.png # 16x16 toolbar icon\
+  ├── icon48.png # 48x48 extension icon\
+  └── icon128.png # 128x128 store icon\
 
 text
 
