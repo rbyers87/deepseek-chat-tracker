@@ -1,69 +1,125 @@
-// File upload detection and token estimation
-const fileUploadTracker = {
-  // Track uploaded files in current chat
-  uploadedFiles: [],
+// DeepSeek Chat Tracker with File Upload Detection
+console.log('DeepSeek Token Tracker loaded');
+
+// Token estimation functions
+const tokenEstimator = {
+  charsPerToken: 4,
+  currentChatTokens: 0,
+  chatHistory: [],
   
-  // Token estimates for different file types (approximate)
-  fileTokenEstimates: {
-    // Text files: ~1 token per 4 characters
-    txt: { tokensPerKB: 256, description: 'Text file' },
-    // Code files: ~1.3 tokens per 4 characters (more punctuation)
-    js: { tokensPerKB: 333, description: 'JavaScript file' },
-    py: { tokensPerKB: 333, description: 'Python file' },
-    java: { tokensPerKB: 333, description: 'Java file' },
-    cpp: { tokensPerKB: 333, description: 'C++ file' },
-    c: { tokensPerKB: 333, description: 'C file' },
-    html: { tokensPerKB: 333, description: 'HTML file' },
-    css: { tokensPerKB: 333, description: 'CSS file' },
-    json: { tokensPerKB: 333, description: 'JSON file' },
-    xml: { tokensPerKB: 333, description: 'XML file' },
-    md: { tokensPerKB: 256, description: 'Markdown file' },
-    // Documents: Rough estimates
-    pdf: { tokensPerKB: 200, description: 'PDF document' },
-    doc: { tokensPerKB: 200, description: 'Word document' },
-    docx: { tokensPerKB: 200, description: 'Word document' },
-    // Images: OCR text extraction (varies widely)
-    jpg: { tokensPerKB: 100, description: 'Image (JPG)' },
-    jpeg: { tokensPerKB: 100, description: 'Image (JPEG)' },
-    png: { tokensPerKB: 100, description: 'Image (PNG)' },
-    gif: { tokensPerKB: 100, description: 'Image (GIF)' },
-    // Spreadsheets
-    csv: { tokensPerKB: 256, description: 'CSV file' },
-    xls: { tokensPerKB: 200, description: 'Excel file' },
-    xlsx: { tokensPerKB: 200, description: 'Excel file' }
+  estimateTokens(text) {
+    if (!text || text.length === 0) return 0;
+    
+    const cleanText = text.trim().replace(/\s+/g, ' ');
+    let estimatedTokens = Math.ceil(cleanText.length / this.charsPerToken);
+    
+    if (this.containsCode(text)) {
+      estimatedTokens = Math.ceil(estimatedTokens * 1.3);
+    }
+    
+    const urlCount = (text.match(/https?:\/\/[^\s]+/g) || []).length;
+    estimatedTokens += urlCount * 10;
+    
+    return estimatedTokens;
   },
   
-  // Default estimate for unknown file types
-  defaultEstimate: { tokensPerKB: 150, description: 'Unknown file type' },
-  
-  // Detect file uploads in the chat
-  detectFileUploads() {
-    console.log('Scanning for file uploads...');
+  containsCode(text) {
+    const codeIndicators = [
+      /```[\s\S]*?```/,
+      /`[^`]+`/,
+      /\[.*\]\(.*\)/,
+      /#{1,6}\s+/,
+      /\*\*.*\*\*/,
+      /\*.*\*/,
+      /^\s*\d+\.\s+/,
+      /^\s*[-*+]\s+/,
+      />\s+/,
+      /\b(function|def|class|import|export|var|let|const|return|if|else|for|while)\b/
+    ];
     
-    // DeepSeek specific selectors for file uploads
+    return codeIndicators.some(pattern => pattern.test(text));
+  },
+  
+  resetChat() {
+    this.currentChatTokens = 0;
+    this.chatHistory = [];
+    console.log('Token tracker reset');
+  },
+  
+  addMessage(text, isUser = true) {
+    const tokens = this.estimateTokens(text);
+    this.currentChatTokens += tokens;
+    
+    this.chatHistory.push({
+      text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      tokens: tokens,
+      isUser: isUser,
+      timestamp: new Date().toISOString(),
+      cumulativeTokens: this.currentChatTokens
+    });
+    
+    if (this.chatHistory.length > 50) {
+      this.chatHistory.shift();
+    }
+    
+    return {
+      tokens: tokens,
+      cumulativeTokens: this.currentChatTokens
+    };
+  },
+  
+  getUsagePercentage(limit = 128000) {
+    return Math.min(100, (this.currentChatTokens / limit) * 100);
+  },
+  
+  getRemainingTokens(limit = 128000) {
+    return Math.max(0, limit - this.currentChatTokens);
+  }
+};
+
+// File upload tracker
+const fileUploadTracker = {
+  uploadedFiles: [],
+  
+  fileTokenEstimates: {
+    txt: { tokensPerKB: 256, description: 'Text file' },
+    js: { tokensPerKB: 333, description: 'JavaScript' },
+    py: { tokensPerKB: 333, description: 'Python' },
+    java: { tokensPerKB: 333, description: 'Java' },
+    cpp: { tokensPerKB: 333, description: 'C++' },
+    c: { tokensPerKB: 333, description: 'C' },
+    html: { tokensPerKB: 333, description: 'HTML' },
+    css: { tokensPerKB: 333, description: 'CSS' },
+    json: { tokensPerKB: 333, description: 'JSON' },
+    xml: { tokensPerKB: 333, description: 'XML' },
+    md: { tokensPerKB: 256, description: 'Markdown' },
+    pdf: { tokensPerKB: 200, description: 'PDF' },
+    doc: { tokensPerKB: 200, description: 'Word' },
+    docx: { tokensPerKB: 200, description: 'Word' },
+    jpg: { tokensPerKB: 100, description: 'Image' },
+    jpeg: { tokensPerKB: 100, description: 'Image' },
+    png: { tokensPerKB: 100, description: 'Image' },
+    gif: { tokensPerKB: 100, description: 'Image' },
+    csv: { tokensPerKB: 256, description: 'CSV' },
+    xls: { tokensPerKB: 200, description: 'Excel' },
+    xlsx: { tokensPerKB: 200, description: 'Excel' }
+  },
+  
+  defaultEstimate: { tokensPerKB: 150, description: 'File' },
+  
+  detectFileUploads() {
     const fileSelectors = [
-      // File upload buttons/inputs
       'input[type="file"]',
       'button[aria-label*="file"]',
       'button[aria-label*="upload"]',
       '[class*="file"]',
       '[class*="upload"]',
-      
-      // File attachments in chat
       '[class*="attachment"]',
-      '[class*="file-attachment"]',
       '[data-file]',
-      '[data-attachment]',
-      
-      // File previews
       'img[src*="upload"]',
       '[class*="preview"]',
-      '[class*="thumbnail"]',
-      
-      // File names in chat
-      'a[href*="."]', // Links with file extensions
-      'span[class*="filename"]',
-      'div[class*="filename"]'
+      'a[href*="."]',
+      'span[class*="filename"]'
     ];
     
     const detectedFiles = [];
@@ -76,42 +132,27 @@ const fileUploadTracker = {
             detectedFiles.push(fileInfo);
           }
         });
-      } catch (e) {
-        // Ignore invalid selectors
-      }
+      } catch (e) {}
     });
     
     return detectedFiles;
   },
   
-  // Extract file information from DOM element
   extractFileInfo(element) {
-    // Try to get filename
-    let fileName = '';
-    let fileSize = 0;
+    let fileName = element.getAttribute('title') || 
+                   element.getAttribute('alt') || 
+                   element.textContent || 
+                   element.getAttribute('href');
     
-    // Check element attributes
-    fileName = element.getAttribute('title') || 
-               element.getAttribute('alt') || 
-               element.textContent || 
-               element.getAttribute('href');
-    
-    // Filter out non-file elements
     if (!fileName || fileName.length < 3) return null;
     
-    // Extract just the filename
     const match = fileName.match(/([^\/\\]+\.\w{1,10})$/i);
-    if (match) {
-      fileName = match[1];
-    } else {
-      // Not a valid filename with extension
-      return null;
-    }
+    if (!match) return null;
     
-    // Get file extension
+    fileName = match[1];
     const extension = fileName.split('.').pop().toLowerCase();
     
-    // Try to get file size from nearby elements
+    let fileSize = 0;
     const parent = element.parentElement;
     const siblings = Array.from(parent?.children || []);
     
@@ -122,7 +163,6 @@ const fileUploadTracker = {
         const size = parseFloat(sizeMatch[1]);
         const unit = sizeMatch[3].toLowerCase();
         
-        // Convert to KB
         if (unit.includes('mb')) {
           fileSize = size * 1024;
         } else if (unit.includes('gb')) {
@@ -130,12 +170,11 @@ const fileUploadTracker = {
         } else if (unit.includes('bytes')) {
           fileSize = size / 1024;
         } else {
-          fileSize = size; // Already in KB
+          fileSize = size;
         }
       }
     });
     
-    // Default size if not found
     if (fileSize === 0) {
       fileSize = this.estimateFileSize(fileName, extension);
     }
@@ -144,47 +183,30 @@ const fileUploadTracker = {
       fileName: fileName,
       extension: extension,
       sizeKB: fileSize,
-      detectedAt: new Date().toISOString(),
-      element: element
+      detectedAt: new Date().toISOString()
     };
   },
   
-  // Estimate file size based on type
   estimateFileSize(fileName, extension) {
-    // Rough estimates based on file type
     const sizeEstimates = {
-      txt: 50,       // 50KB average text file
-      pdf: 500,      // 500KB average PDF
-      doc: 300,      // 300KB average Word doc
-      docx: 300,
-      jpg: 800,      // 800KB average image
-      jpeg: 800,
-      png: 1000,     // 1MB average PNG
-      gif: 500,
-      js: 100,       // 100KB average JS file
-      py: 80,        // 80KB average Python file
-      java: 120,     // 120KB average Java file
-      csv: 200,      // 200KB average CSV
-      xlsx: 400      // 400KB average Excel
+      txt: 50, pdf: 500, doc: 300, docx: 300,
+      jpg: 800, jpeg: 800, png: 1000, gif: 500,
+      js: 100, py: 80, java: 120, csv: 200, xlsx: 400
     };
     
-    return sizeEstimates[extension] || 100; // Default 100KB
+    return sizeEstimates[extension] || 100;
   },
   
-  // Check if file is already tracked
   isFileAlreadyTracked(fileInfo) {
     return this.uploadedFiles.some(file => 
       file.fileName === fileInfo.fileName && 
-      Math.abs(new Date(file.detectedAt) - new Date(fileInfo.detectedAt)) < 60000 // Within 1 minute
+      Math.abs(new Date(file.detectedAt) - new Date(fileInfo.detectedAt)) < 60000
     );
   },
   
-  // Estimate tokens for a file
   estimateFileTokens(fileInfo) {
     const extension = fileInfo.extension;
     const estimate = this.fileTokenEstimates[extension] || this.defaultEstimate;
-    
-    // Calculate tokens: size in KB * tokens per KB
     const tokens = Math.ceil(fileInfo.sizeKB * estimate.tokensPerKB);
     
     return {
@@ -194,7 +216,6 @@ const fileUploadTracker = {
     };
   },
   
-  // Process all detected files and estimate total tokens
   processUploadedFiles() {
     const detectedFiles = this.detectFileUploads();
     const newFiles = [];
@@ -224,10 +245,7 @@ const fileUploadTracker = {
     });
     
     if (newFiles.length > 0) {
-      console.log(`Detected ${newFiles.length} new file(s), estimated ${totalNewTokens} tokens`);
-      newFiles.forEach(file => {
-        console.log(`  - ${file.fileName}: ${file.sizeKB.toFixed(1)}KB → ~${file.tokens} tokens`);
-      });
+      console.log(`Detected ${newFiles.length} file(s): ${totalNewTokens} tokens`);
     }
     
     return {
@@ -237,52 +255,147 @@ const fileUploadTracker = {
     };
   },
   
-  // Reset for new chat
   reset() {
     this.uploadedFiles = [];
-    console.log('File upload tracker reset');
   },
   
-  // Get total tokens from all uploaded files in current chat
   getTotalFileTokens() {
     return this.uploadedFiles.reduce((total, file) => total + (file.estimatedTokens || 0), 0);
   }
 };
 
-// Integrate with token estimator
-tokenEstimator.estimateFileTokens = function(fileInfo) {
-  return fileUploadTracker.estimateFileTokens(fileInfo);
-};
+// Main tracker variables
+let observer = null;
+let lastProcessedText = '';
+let currentChatId = null;
 
-tokenEstimator.addFileUpload = function(fileInfo) {
-  const tokenEstimate = fileUploadTracker.estimateFileTokens(fileInfo);
-  const result = this.addMessage(
-    `[FILE UPLOAD: ${fileInfo.fileName} (${fileInfo.sizeKB.toFixed(1)}KB)]`,
-    true // User uploaded
-  );
-  
-  // Add extra tokens for the file content
-  this.currentChatTokens += tokenEstimate.tokens;
-  
-  return {
-    ...result,
-    fileTokens: tokenEstimate.tokens,
-    fileInfo: fileInfo
-  };
-};
+// Detect chat ID
+function detectChatId() {
+  const url = window.location.href;
+  try {
+    const urlObj = new URL(url);
+    return urlObj.searchParams.get('session') || 
+           urlObj.pathname.split('/').pop() ||
+           'chat_' + Date.now();
+  } catch (e) {
+    return 'unknown';
+  }
+}
 
-// Monitor for file uploads
+// Extract messages
+function extractAllMessages() {
+  const messages = [];
+  const selectors = [
+    '[data-message-author-role="user"]',
+    '[data-message-author-role="assistant"]',
+    '.prose',
+    '.markdown-body',
+    '[class*="message"]'
+  ];
+  
+  selectors.forEach(selector => {
+    try {
+      document.querySelectorAll(selector).forEach(element => {
+        const text = element.textContent?.trim() || '';
+        if (text && text.length > 5) {
+          const isUser = selector.includes('user') || 
+                        element.getAttribute('data-message-author-role') === 'user';
+          
+          messages.push({
+            text: text,
+            element: element,
+            isUser: isUser
+          });
+        }
+      });
+    } catch (e) {}
+  });
+  
+  return messages;
+}
+
+// Process messages
+function processMessages() {
+  const messages = extractAllMessages();
+  const currentText = messages.map(m => m.text).join('|||');
+  
+  if (currentText === lastProcessedText) {
+    return null;
+  }
+  
+  lastProcessedText = currentText;
+  
+  // Check for new chat
+  const newChatId = detectChatId();
+  if (newChatId !== currentChatId) {
+    console.log(`New chat: ${currentChatId} -> ${newChatId}`);
+    currentChatId = newChatId;
+    tokenEstimator.resetChat();
+    fileUploadTracker.reset();
+    
+    chrome.runtime.sendMessage({
+      type: 'NEW_CHAT_STARTED',
+      data: {
+        chatId: newChatId,
+        url: window.location.href,
+        title: document.title
+      }
+    });
+  }
+  
+  // Process each message
+  let totalTokens = 0;
+  const processedMessages = [];
+  
+  messages.forEach((msg, index) => {
+    const existingMsg = tokenEstimator.chatHistory.find(
+      h => h.text.startsWith(msg.text.substring(0, 50))
+    );
+    
+    if (!existingMsg) {
+      const result = tokenEstimator.addMessage(msg.text, msg.isUser);
+      totalTokens = result.cumulativeTokens;
+      
+      processedMessages.push({
+        text: msg.text.substring(0, 100) + (msg.text.length > 100 ? '...' : ''),
+        tokens: result.tokens,
+        isUser: msg.isUser,
+        cumulativeTokens: result.cumulativeTokens
+      });
+    }
+  });
+  
+  if (processedMessages.length > 0) {
+    chrome.runtime.sendMessage({
+      type: 'TOKENS_UPDATED',
+      data: {
+        chatId: currentChatId,
+        newTokens: processedMessages.reduce((sum, msg) => sum + msg.tokens, 0),
+        totalTokens: totalTokens,
+        usagePercent: tokenEstimator.getUsagePercentage(),
+        remainingTokens: tokenEstimator.getRemainingTokens(),
+        messageCount: processedMessages.length,
+        isUserMessage: processedMessages.some(m => m.isUser)
+      }
+    });
+    
+    return {
+      processedMessages: processedMessages,
+      totalTokens: totalTokens
+    };
+  }
+  
+  return null;
+}
+
+// File upload detection
 function setupFileUploadDetection() {
-  console.log('Setting up file upload detection...');
-  
-  // Monitor file input changes
+  // Monitor file inputs
   document.addEventListener('change', (e) => {
     if (e.target.type === 'file') {
-      console.log('File input detected');
       setTimeout(() => {
         const files = fileUploadTracker.processUploadedFiles();
         if (files.newFiles.length > 0) {
-          // Report file upload tokens
           chrome.runtime.sendMessage({
             type: 'FILE_UPLOAD_DETECTED',
             data: {
@@ -292,11 +405,11 @@ function setupFileUploadDetection() {
             }
           });
         }
-      }, 2000); // Wait for upload to complete
+      }, 2000);
     }
   });
   
-  // Monitor for file upload UI
+  // Monitor for upload UI
   const uploadObserver = new MutationObserver((mutations) => {
     mutations.forEach(mutation => {
       if (mutation.type === 'childList') {
@@ -305,12 +418,10 @@ function setupFileUploadDetection() {
             const className = node.className || '';
             const text = node.textContent || '';
             
-            // Look for file upload indicators
             if (className.includes('upload') || 
                 className.includes('file') ||
                 text.includes('Upload') ||
-                text.includes('uploading') ||
-                (node.tagName === 'IMG' && (node.src.includes('upload') || node.alt.includes('file')))) {
+                (node.tagName === 'IMG' && node.src.includes('upload'))) {
               
               setTimeout(() => {
                 const files = fileUploadTracker.processUploadedFiles();
@@ -332,7 +443,6 @@ function setupFileUploadDetection() {
     });
   });
   
-  // Start observing for file uploads
   uploadObserver.observe(document.body, {
     childList: true,
     subtree: true,
@@ -340,7 +450,7 @@ function setupFileUploadDetection() {
     attributeFilter: ['class', 'src', 'alt', 'title']
   });
   
-  // Also check periodically
+  // Periodic check
   setInterval(() => {
     const files = fileUploadTracker.processUploadedFiles();
     if (files.newFiles.length > 0) {
@@ -353,23 +463,68 @@ function setupFileUploadDetection() {
         }
       });
     }
-  }, 10000); // Check every 10 seconds
-  
-  // Reset on new chat
-  window.addEventListener('newchat', () => {
-    fileUploadTracker.reset();
-  });
+  }, 10000);
 }
 
-// Update the initialization to include file tracking
-function initializeTracker() {
-  // ... existing initialization code ...
+// Set up observer
+function initObserver() {
+  let timeoutId = null;
   
-  // Add file upload detection
-  setTimeout(() => {
-    setupFileUploadDetection();
+  observer = new MutationObserver((mutations) => {
+    let shouldCheck = false;
     
-    // Initial scan for existing files
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList') {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === 1) {
+            const className = node.className || '';
+            const text = node.textContent || '';
+            
+            if ((className.includes('message') || 
+                 className.includes('Message') ||
+                 className.includes('prose')) &&
+                text.length > 10) {
+              shouldCheck = true;
+              break;
+            }
+          }
+        }
+      }
+      if (shouldCheck) break;
+    }
+    
+    if (shouldCheck && !timeoutId) {
+      timeoutId = setTimeout(() => {
+        processMessages();
+        timeoutId = null;
+      }, 1000);
+    }
+  });
+  
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+  
+  console.log('Tracker observer started');
+}
+
+// Initialize everything
+function initializeTracker() {
+  // Initial chat detection
+  currentChatId = detectChatId();
+  console.log(`Initial chat ID: ${currentChatId}`);
+  
+  // Set up observers
+  initObserver();
+  setupFileUploadDetection();
+  
+  // Process existing content
+  setTimeout(() => {
+    processMessages();
+    
+    // Check for existing files
     const files = fileUploadTracker.processUploadedFiles();
     if (files.newFiles.length > 0) {
       chrome.runtime.sendMessage({
@@ -381,10 +536,10 @@ function initializeTracker() {
         }
       });
     }
-  }, 5000);
+  }, 3000);
 }
 
-// Call initializeTracker instead of separate init functions
+// Start when page loads
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initializeTracker, 2000);
@@ -392,3 +547,10 @@ if (document.readyState === 'loading') {
 } else {
   setTimeout(initializeTracker, 2000);
 }
+
+// Clean up
+window.addEventListener('beforeunload', () => {
+  if (observer) {
+    observer.disconnect();
+  }
+});
