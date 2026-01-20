@@ -37,15 +37,15 @@ A browser extension that tracks your DeepSeek chat token usage, including file u
 
 ## 📁 Folder Structure
 deepseek-chat-tracker/
-├── manifest.json # Extension configuration (Chrome V3)
-├── background.js # Background script with token tracking
-├── content.js # Content script for DeepSeek detection
-├── popup.html # Popup interface HTML
-├── popup.js # Popup functionality
-└── icons/ # Extension icons
-├── icon16.png # 16x16 toolbar icon
-├── icon48.png # 48x48 extension icon
-└── icon128.png # 128x128 store icon
+- ├── manifest.json # Extension configuration (Chrome V3)
+- ├── background.js # Background script with token tracking
+- ├── content.js # Content script for DeepSeek detection
+- ├── popup.html # Popup interface HTML
+- ├── popup.js # Popup functionality
+- └── icons/ # Extension icons
+- ├── icon16.png # 16x16 toolbar icon
+- ├── icon48.png # 48x48 extension icon
+- └── icon128.png # 128x128 store icon
 
 text
 
