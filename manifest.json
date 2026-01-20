@@ -2,30 +2,39 @@
   "manifest_version": 3,
   "name": "DeepSeek Chat Tracker",
   "version": "1.0.0",
-  "description": "Track your DeepSeek chat usage",
+  "description": "Track DeepSeek chat token usage including file uploads",
   
-  "permissions": ["storage"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "alarms",
+    "notifications"
+  ],
   
-  "host_permissions": ["*://chat.deepseek.com/*"],
+  "host_permissions": [
+    "*://chat.deepseek.com/*"
+  ],
   
   "background": {
     "service_worker": "background.js"
   },
   
   "action": {
-    "default_title": "DeepSeek Tracker",
+    "default_title": "DeepSeek Token Tracker",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon16.png",
-      "48": "icons/icon48.png"
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
     }
   },
   
   "content_scripts": [
     {
       "matches": ["*://chat.deepseek.com/*"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_end"
     }
   ],
   
