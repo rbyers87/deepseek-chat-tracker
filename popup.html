@@ -3,24 +3,20 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* CRITICAL: Set explicit dimensions */
-    html, body {
-      width: 320px;
-      height: 400px;
+    * {
       margin: 0;
       padding: 0;
-      overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      box-sizing: border-box;
     }
     
-    .container {
-      width: 100%;
-      height: 100%;
+    body {
+      width: 350px;
+      min-height: 420px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
-      padding: 20px;
-      box-sizing: border-box;
-      overflow-y: auto;
+      overflow: hidden;
     }
     
     .header {
@@ -33,7 +29,7 @@
     h1 {
       font-size: 18px;
       font-weight: 600;
-      margin: 0 0 5px 0;
+      margin-bottom: 5px;
     }
     
     .subtitle {
@@ -151,6 +147,56 @@
       color: rgba(255,255,255,0.6);
     }
     
+    .files-container {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .files-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 11px;
+    }
+    
+    .file-tokens {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+    
+    .file-item {
+      background: rgba(255,255,255,0.05);
+      padding: 8px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      font-size: 11px;
+    }
+    
+    .file-name {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    
+    .file-size {
+      color: rgba(255,255,255,0.6);
+      font-size: 10px;
+    }
+    
+    .file-info {
+      color: rgba(255,255,255,0.7);
+      font-size: 10px;
+    }
+    
+    .no-files {
+      text-align: center;
+      color: rgba(255,255,255,0.5);
+      font-size: 11px;
+      font-style: italic;
+      padding: 10px;
+    }
+    
     .status-bar {
       font-size: 10px;
       text-align: center;
@@ -169,66 +215,77 @@
       color: #ff4444;
       font-weight: bold;
     }
+    
+    .add-file-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 8px;
+      background: rgba(255,255,255,0.1);
+      border: 1px dashed rgba(255,255,255,0.3);
+      border-radius: 4px;
+      color: white;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    
+    .add-file-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>DeepSeek Tracker</h1>
-      <div class="subtitle">Track your daily chat usage</div>
+  <div class="header">
+    <h1>DeepSeek Token Tracker</h1>
+    <div class="subtitle">Track chat context usage including files</div>
+  </div>
+  
+  <div class="stats-card">
+    <div class="stat-row">
+      <span class="stat-label">Tokens Used:</span>
+      <span class="stat-value" id="todayCount">0</span>
     </div>
     
-    <div class="stats-card">
-      <div class="stat-row">
-        <span class="stat-label">Messages Today:</span>
-        <span class="stat-value" id="todayCount">0</span>
-      </div>
-      <div class="stat-row">
-  <span class="stat-label">Chats Today:</span>
-  <span class="stat-value" id="sessionsCount">0</span>
-</div>
-      
-      <div class="stat-row">
-        <span class="stat-label">Daily Limit:</span>
-        <span class="stat-value" id="dailyLimit">30</span>
-      </div>
-      
-      <div class="stat-row">
-        <span class="stat-label">Remaining:</span>
-        <span class="stat-value" id="remainingCount">30</span>
-      </div>
-      
-      <div class="progress-container">
-        <div class="progress-header">
-          <span>Daily Usage</span>
-          <span id="percentage">0%</span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-fill" id="progressFill"></div>
-        </div>
-      </div>
+    <div class="stat-row">
+      <span class="stat-label">Token Limit:</span>
+      <span class="stat-value" id="dailyLimit">128K</span>
     </div>
     
-    <div class="buttons">
-      <button class="btn" id="endChatBtn">⏹️ End Chat</button>
-      <button class="btn" id="refreshBtn">🔄 Refresh</button>
-      <button class="btn btn-primary" id="resetBtn">🔄 Reset Counter</button>
-      <button class="btn" id="forceResetBtn">🕛 Daily Reset</button>
+    <div class="stat-row">
+      <span class="stat-label">Remaining:</span>
+      <span class="stat-value" id="remainingCount">128K</span>
     </div>
     
-    <div class="limit-control">
-      <div style="font-size: 12px; margin-bottom: 8px;">Set Daily Limit:</div>
-      <div class="limit-input-group">
-        <input type="number" id="limitInput" class="limit-input" placeholder="Enter limit" min="1" max="999" value="30">
-        <button class="btn" id="setLimitBtn">Set</button>
+    <div class="progress-container">
+      <div class="progress-header">
+        <span>Context Usage</span>
+        <span id="percentage">0%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
       </div>
     </div>
-    
-    <div class="status-bar">
-      Last reset: <span id="lastReset">Today</span> • 
-      Updated: <span id="updateTime">--:--</span>
-      <div id="warningMessage"></div>
+  </div>
+  
+  <div class="buttons">
+    <button class="btn" id="refreshBtn">🔄 Refresh</button>
+    <button class="btn btn-primary" id="resetBtn">🔄 Reset Chat</button>
+    <button class="btn" id="endChatBtn">⏹️ End Chat</button>
+    <button class="btn" id="addFileBtn">📎 Add File</button>
+  </div>
+  
+  <div class="files-container">
+    <div class="files-header">
+      <strong>Uploaded Files</strong>
+      <span class="file-tokens" id="fileTokenCount">0 tokens</span>
     </div>
+    <div id="fileUploadsContainer" class="no-files">
+      No files uploaded in this chat
+    </div>
+  </div>
+  
+  <div class="status-bar">
+    Updated: <span id="updateTime">--:--</span>
+    <div id="warningMessage"></div>
   </div>
   
   <script src="popup.js"></script>
