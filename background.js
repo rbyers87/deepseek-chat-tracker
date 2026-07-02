@@ -46,7 +46,7 @@ function saveSessions() {
 
 // Start new chat session
 function startNewChatSession(chatId, url, title) {
-  console.log(`Starting new chat session: ${chatId}`);
+  console.log(`Starting new chat session: ${chatId}, title: ${title}`);
   
   if (chatSessions.currentSession) {
     endCurrentChatSession();
@@ -123,8 +123,9 @@ function updateBadge() {
   // Set tooltip
   const remaining = Math.max(0, limit - tokens);
   const remainingK = remaining >= 1000 ? (remaining / 1000).toFixed(1) + 'K' : remaining;
+  const title = chatSessions.currentSession.title || 'DeepSeek Chat';
   chrome.action.setTitle({
-    title: `Tokens: ${formatNumber(tokens)}/${formatNumber(limit)} (${Math.round(percent)}%)\n` +
+    title: `${title}\nTokens: ${formatNumber(tokens)}/${formatNumber(limit)} (${Math.round(percent)}%)\n` +
            `Remaining: ${remainingK}\n` +
            `Files: ${chatSessions.currentSession.fileUploads?.length || 0}\n` +
            `Chats today: ${chatSessions.sessions.length}`
@@ -159,13 +160,13 @@ function checkTokenWarnings(session) {
   if (prevTokens < warning && tokens >= warning) {
     showNotification(
       'Token Usage Warning',
-      `Chat is at ${percent}% capacity (${formatNumber(tokens)} tokens). ` +
+      `Chat "${session.title || 'DeepSeek Chat'}" is at ${percent}% capacity (${formatNumber(tokens)} tokens). ` +
       `Consider starting a new chat soon.`
     );
   } else if (prevTokens < critical && tokens >= critical) {
     showNotification(
       'Token Usage Critical!',
-      `Chat is at ${percent}% capacity (${formatNumber(tokens)} tokens). ` +
+      `Chat "${session.title || 'DeepSeek Chat'}" is at ${percent}% capacity (${formatNumber(tokens)} tokens). ` +
       `Context window almost full!`
     );
   }
@@ -201,7 +202,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     let session = chatSessions.currentSession;
     if (!session || session.id !== data.chatId) {
-      session = startNewChatSession(data.chatId, sender.tab?.url, 'DeepSeek Chat');
+      session = startNewChatSession(data.chatId, sender.tab?.url, data.title || 'DeepSeek Chat');
+    } else if (data.title && session.title !== data.title) {
+      // Update title if changed
+      session.title = data.title;
     }
     
     session.totalTokens = data.totalTokens || 0;
@@ -343,7 +347,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
-  // NEW: Get filtered list of sessions
+  // Get filtered list of sessions
   if (request.type === 'GET_SESSIONS') {
     const filter = request.filter || 'today'; // 'today', '7days', 'all'
     const now = new Date();
@@ -366,7 +370,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
-  // NEW: Get a single session by ID
+  // Get a single session by ID
   if (request.type === 'GET_SESSION') {
     const id = request.id;
     const session = chatSessions.sessions.find(s => s.id === id);
