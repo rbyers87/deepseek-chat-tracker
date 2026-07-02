@@ -231,12 +231,109 @@
     .add-file-btn:hover {
       background: rgba(255,255,255,0.2);
     }
+
+    /* New styles for session selector */
+    .session-selector {
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .session-selector select {
+      flex: 1;
+      padding: 6px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      color: white;
+      font-size: 12px;
+    }
+
+    .session-selector select option {
+      background: #2d2d2d;
+      color: white;
+    }
+
+    #sessionList {
+      max-height: 140px;
+      overflow-y: auto;
+      background: rgba(255,255,255,0.05);
+      border-radius: 4px;
+      padding: 4px;
+      margin-top: 6px;
+    }
+
+    #sessionList::-webkit-scrollbar {
+      width: 4px;
+    }
+    #sessionList::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.3);
+      border-radius: 2px;
+    }
+
+    .session-item {
+      padding: 6px 8px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      transition: background 0.2s;
+    }
+    .session-item:hover {
+      background: rgba(255,255,255,0.1) !important;
+    }
+    .session-item.current {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .back-btn {
+      font-size: 10px;
+      padding: 4px 8px;
+      margin-top: 6px;
+      background: rgba(255,255,255,0.1);
+      border: none;
+      border-radius: 4px;
+      color: white;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .back-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    .historical-note {
+      font-size: 10px;
+      opacity: 0.7;
+      text-align: center;
+      margin-top: 4px;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>DeepSeek Token Tracker</h1>
     <div class="subtitle">Track chat context usage including files</div>
+  </div>
+  
+  <!-- NEW: Session Selector -->
+  <div class="session-selector">
+    <div style="display:flex; gap:8px; margin-bottom:6px;">
+      <select id="filterSelect">
+        <option value="today">Today</option>
+        <option value="7days">Last 7 Days</option>
+        <option value="all">All Sessions</option>
+      </select>
+      <button class="btn" id="refreshSessionsBtn" style="padding:6px 12px;">🔄</button>
+    </div>
+    <div id="sessionList">
+      <!-- sessions populated here -->
+    </div>
+    <div style="text-align:center; margin-top:4px;">
+      <button class="back-btn" id="backToCurrentBtn">← Back to Current</button>
+    </div>
   </div>
   
   <div class="stats-card">
@@ -286,6 +383,7 @@
   <div class="status-bar">
     Updated: <span id="updateTime">--:--</span>
     <div id="warningMessage"></div>
+    <div id="historicalNote" class="historical-note" style="display:none;">Viewing historical session</div>
   </div>
   
   <script src="popup.js"></script>
