@@ -343,6 +343,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
+  // NEW: Get filtered list of sessions
+  if (request.type === 'GET_SESSIONS') {
+    const filter = request.filter || 'today'; // 'today', '7days', 'all'
+    const now = new Date();
+    let filtered = chatSessions.sessions;
+
+    if (filter === 'today') {
+      const todayStr = now.toDateString();
+      filtered = filtered.filter(s => new Date(s.startTime).toDateString() === todayStr);
+    } else if (filter === '7days') {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      filtered = filtered.filter(s => new Date(s.startTime) >= weekAgo);
+    }
+    // else 'all' – return everything
+
+    sendResponse({
+      sessions: filtered,
+      currentSessionId: chatSessions.currentSession?.id || null,
+      settings: chatSessions.settings
+    });
+    return true;
+  }
+  
+  // NEW: Get a single session by ID
+  if (request.type === 'GET_SESSION') {
+    const id = request.id;
+    const session = chatSessions.sessions.find(s => s.id === id);
+    sendResponse({ 
+      session: session || null, 
+      settings: chatSessions.settings 
+    });
+    return true;
+  }
+  
   if (request.type === 'END_CURRENT_CHAT') {
     endCurrentChatSession();
     sendResponse({ success: true });
