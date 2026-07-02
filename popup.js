@@ -3,6 +3,8 @@ console.log('Token Tracker popup loading...');
 
 const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 
+let selectedSessionId = null; // null = live session
+
 // Format tokens for display
 function formatTokens(tokens) {
   if (tokens >= 1000000) {
@@ -13,11 +15,8 @@ function formatTokens(tokens) {
   return tokens.toString();
 }
 
-// Update main display
-function updateDisplay(data) {
-  const session = data.currentSession;
-  const settings = data.settings || { tokenLimit: 128000 };
-  
+// Core rendering function – used for both live and historical sessions
+function renderStats(session, settings, isHistorical = false) {
   if (!session) {
     document.getElementById('todayCount').textContent = '0';
     document.getElementById('dailyLimit').textContent = formatTokens(settings.tokenLimit);
@@ -26,6 +25,8 @@ function updateDisplay(data) {
     document.getElementById('percentage').textContent = '0%';
     document.getElementById('warningMessage').textContent = 'No active chat';
     document.getElementById('fileTokenCount').textContent = '0 tokens';
+    document.getElementById('fileUploadsContainer').innerHTML = '<div class="no-files">No files uploaded in this chat</div>';
+    document.getElementById('historicalNote').style.display = 'none';
     return;
   }
   
@@ -59,12 +60,15 @@ function updateDisplay(data) {
   // Update file display
   updateFileDisplay(session);
   
+  // Show/hide historical note
+  document.getElementById('historicalNote').style.display = isHistorical ? 'block' : 'none';
+  
   // Update time
   document.getElementById('updateTime').textContent = 
     new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// Update file display
+// Update file display (unchanged)
 function updateFileDisplay(session) {
   const container = document.getElementById('fileUploadsContainer');
   const tokenCount = document.getElementById('fileTokenCount');
@@ -97,12 +101,17 @@ function updateFileDisplay(session) {
   container.innerHTML = html;
 }
 
-// Load data from background
+// Load live data from background (for current session)
 function loadData() {
   browserAPI.runtime.sendMessage({ type: 'GET_STATS' })
     .then(response => {
       if (response) {
-        updateDisplay(response);
+        // If we are in "live" mode (no selected session), render live
+        if (selectedSessionId === null) {
+          renderStats(response.currentSession, response.settings, false);
+        }
+        // Always refresh the session list (to update current indicator)
+        loadSessions(document.getElementById('filterSelect').value);
       }
     })
     .catch(error => {
@@ -110,7 +119,79 @@ function loadData() {
     });
 }
 
-// Add file manually
+// Load and render the list of sessions based on filter
+function loadSessions(filter) {
+  browserAPI.runtime.sendMessage({ type: 'GET_SESSIONS', filter: filter })
+    .then(response => {
+      if (response) {
+        renderSessionList(response.sessions, response.currentSessionId);
+      }
+    })
+    .catch(err => console.error('Error loading sessions:', err));
+}
+
+// Render the session list in the popup
+function renderSessionList(sessions, currentId) {
+  const container = document.getElementById('sessionList');
+  if (!sessions || sessions.length === 0) {
+    container.innerHTML = '<div style="color:rgba(255,255,255,0.5); font-size:11px; text-align:center; padding:8px;">No sessions in this period</div>';
+    return;
+  }
+
+  // Sort by start time descending (newest first)
+  const sorted = sessions.slice().sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+  let html = '';
+  sorted.forEach(session => {
+    const isCurrent = session.id === currentId;
+    const start = new Date(session.startTime).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    const tokens = session.totalTokens || 0;
+    const files = session.fileUploads?.length || 0;
+    const label = session.title || 'DeepSeek Chat';
+    const activeClass = isCurrent ? ' current' : '';
+    const selectedClass = (selectedSessionId === session.id) ? ' current' : ''; // highlight if selected
+    html += `
+      <div class="session-item${activeClass}${selectedClass}" data-id="${session.id}" style="padding:6px 8px; border-radius:4px; margin-bottom:4px; cursor:pointer; display:flex; justify-content:space-between; font-size:11px; transition:0.2s;">
+        <span>${isCurrent ? '● ' : ''}${label}</span>
+        <span>${start} • ${formatTokens(tokens)} tokens • ${files} files</span>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+
+  // Add click listeners to each session item
+  container.querySelectorAll('.session-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      selectSession(id);
+    });
+  });
+}
+
+// Select a historical session by ID and display its stats
+function selectSession(sessionId) {
+  browserAPI.runtime.sendMessage({ type: 'GET_SESSION', id: sessionId })
+    .then(response => {
+      if (response && response.session) {
+        selectedSessionId = sessionId;
+        renderStats(response.session, response.settings, true);
+        // Update the session list to highlight the selected one
+        loadSessions(document.getElementById('filterSelect').value);
+      }
+    })
+    .catch(err => console.error('Error loading session:', err));
+}
+
+// Switch back to the live (current) session
+function goBackToCurrent() {
+  selectedSessionId = null;
+  loadData(); // reloads live stats
+  // Also refresh the session list to remove highlights
+  loadSessions(document.getElementById('filterSelect').value);
+}
+
+// Add file manually (unchanged)
 function addFileManually() {
   const fileName = prompt('Enter filename with extension (e.g., document.pdf):', 'document.pdf');
   if (!fileName) return;
@@ -128,7 +209,6 @@ function addFileManually() {
     sizeKB = sizeKB * 1024;
   }
   
-  // Estimate tokens based on file type
   const extension = fileName.split('.').pop().toLowerCase();
   let tokensPerKB = 150; // Default
   
@@ -147,7 +227,6 @@ function addFileManually() {
   const tokens = Math.ceil(sizeKB * tokensPerKB);
   const description = getFileDescription(extension);
   
-  // Send to background
   browserAPI.runtime.sendMessage({
     type: 'MANUAL_FILE_ADDED',
     data: {
@@ -164,7 +243,6 @@ function addFileManually() {
   });
 }
 
-// Get file description
 function getFileDescription(extension) {
   const descriptions = {
     txt: 'Text file', js: 'JavaScript', py: 'Python', java: 'Java', cpp: 'C++', c: 'C',
@@ -181,30 +259,59 @@ function getFileDescription(extension) {
 document.addEventListener('DOMContentLoaded', () => {
   console.log('Popup loaded');
   
-  // Load initial data
-  loadData();
+  // Load initial data and session list
+  loadData(); // this also calls loadSessions internally
   
-  // Set up auto-refresh
-  const refreshInterval = setInterval(loadData, 2000);
+  // Set up auto-refresh for live data
+  const refreshInterval = setInterval(() => {
+    // Only auto-refresh if we are viewing live
+    if (selectedSessionId === null) {
+      loadData();
+    }
+  }, 2000);
   
   // Button event listeners
-  document.getElementById('refreshBtn').addEventListener('click', loadData);
+  document.getElementById('refreshBtn').addEventListener('click', () => {
+    if (selectedSessionId === null) {
+      loadData();
+    } else {
+      // If viewing historical, reload that session
+      selectSession(selectedSessionId);
+    }
+  });
   
   document.getElementById('resetBtn').addEventListener('click', () => {
     if (confirm('Reset current chat token count to zero?')) {
       browserAPI.runtime.sendMessage({ type: 'END_CURRENT_CHAT' })
-        .then(() => loadData());
+        .then(() => {
+          selectedSessionId = null;
+          loadData();
+        });
     }
   });
   
   document.getElementById('endChatBtn').addEventListener('click', () => {
     if (confirm('End current chat session?')) {
       browserAPI.runtime.sendMessage({ type: 'END_CURRENT_CHAT' })
-        .then(() => loadData());
+        .then(() => {
+          selectedSessionId = null;
+          loadData();
+        });
     }
   });
   
   document.getElementById('addFileBtn').addEventListener('click', addFileManually);
+  
+  // Session selector events
+  document.getElementById('filterSelect').addEventListener('change', (e) => {
+    loadSessions(e.target.value);
+  });
+  
+  document.getElementById('refreshSessionsBtn').addEventListener('click', () => {
+    loadSessions(document.getElementById('filterSelect').value);
+  });
+  
+  document.getElementById('backToCurrentBtn').addEventListener('click', goBackToCurrent);
   
   // Clean up on close
   window.addEventListener('beforeunload', () => {
