@@ -67,6 +67,15 @@
       font-size: 16px;
     }
     
+    .chat-title {
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+      margin-bottom: 12px;
+      opacity: 0.9;
+      word-break: break-word;
+    }
+    
     .progress-container {
       margin: 20px 0;
     }
@@ -318,7 +327,7 @@
     <div class="subtitle">Track chat context usage including files</div>
   </div>
   
-  <!-- NEW: Session Selector -->
+  <!-- Session Selector -->
   <div class="session-selector">
     <div style="display:flex; gap:8px; margin-bottom:6px;">
       <select id="filterSelect">
@@ -337,21 +346,19 @@
   </div>
   
   <div class="stats-card">
+    <div class="chat-title" id="chatTitle">No active chat</div>
     <div class="stat-row">
       <span class="stat-label">Tokens Used:</span>
       <span class="stat-value" id="todayCount">0</span>
     </div>
-    
     <div class="stat-row">
       <span class="stat-label">Token Limit:</span>
       <span class="stat-value" id="dailyLimit">128K</span>
     </div>
-    
     <div class="stat-row">
       <span class="stat-label">Remaining:</span>
       <span class="stat-value" id="remainingCount">128K</span>
     </div>
-    
     <div class="progress-container">
       <div class="progress-header">
         <span>Context Usage</span>
