@@ -17,6 +17,7 @@ function formatTokens(tokens) {
 
 // Core rendering function – used for both live and historical sessions
 function renderStats(session, settings, isHistorical = false) {
+  const titleEl = document.getElementById('chatTitle');
   if (!session) {
     document.getElementById('todayCount').textContent = '0';
     document.getElementById('dailyLimit').textContent = formatTokens(settings.tokenLimit);
@@ -27,6 +28,7 @@ function renderStats(session, settings, isHistorical = false) {
     document.getElementById('fileTokenCount').textContent = '0 tokens';
     document.getElementById('fileUploadsContainer').innerHTML = '<div class="no-files">No files uploaded in this chat</div>';
     document.getElementById('historicalNote').style.display = 'none';
+    titleEl.textContent = 'No active chat';
     return;
   }
   
@@ -34,6 +36,9 @@ function renderStats(session, settings, isHistorical = false) {
   const limit = settings.tokenLimit || 128000;
   const remaining = Math.max(0, limit - tokens);
   const percent = Math.min(100, (tokens / limit) * 100);
+  
+  // Update chat title
+  titleEl.textContent = session.title || 'DeepSeek Chat';
   
   // Update main stats
   document.getElementById('todayCount').textContent = formatTokens(tokens);
@@ -149,7 +154,7 @@ function renderSessionList(sessions, currentId) {
     const files = session.fileUploads?.length || 0;
     const label = session.title || 'DeepSeek Chat';
     const activeClass = isCurrent ? ' current' : '';
-    const selectedClass = (selectedSessionId === session.id) ? ' current' : ''; // highlight if selected
+    const selectedClass = (selectedSessionId === session.id) ? ' current' : '';
     html += `
       <div class="session-item${activeClass}${selectedClass}" data-id="${session.id}" style="padding:6px 8px; border-radius:4px; margin-bottom:4px; cursor:pointer; display:flex; justify-content:space-between; font-size:11px; transition:0.2s;">
         <span>${isCurrent ? '● ' : ''}${label}</span>
