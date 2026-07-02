@@ -1,4 +1,4 @@
-// DeepSeek Chat Tracker with File Upload Detection
+// DeepSeek Chat Tracker with File Upload Detection and Title Extraction
 console.log('DeepSeek Token Tracker loaded');
 
 // Token estimation functions
@@ -264,10 +264,49 @@ const fileUploadTracker = {
   }
 };
 
+// ---------- Chat title extraction ----------
+function getChatTitle() {
+  // Try multiple selectors commonly used for chat titles
+  const selectors = [
+    'h1',
+    '[data-testid="chat-title"]',
+    '[data-testid="conversation-title"]',
+    '.chat-title',
+    '.conversation-title',
+    'header h1',
+    'header span[role="heading"]',
+    '[class*="title"]'
+  ];
+  
+  for (const selector of selectors) {
+    try {
+      const elements = document.querySelectorAll(selector);
+      for (const el of elements) {
+        const text = el.textContent?.trim();
+        if (text && text.length > 0 && text.length < 200) {
+          return text;
+        }
+      }
+    } catch (e) {}
+  }
+  
+  // Fallback: use document.title, but strip "DeepSeek" if present
+  let title = document.title?.trim() || '';
+  if (title) {
+    title = title.replace(/^\s*DeepSeek\s*[-|]\s*/, '').trim();
+    if (title && title.length > 0 && title.length < 200) {
+      return title;
+    }
+  }
+  
+  return null;
+}
+
 // Main tracker variables
 let observer = null;
 let lastProcessedText = '';
 let currentChatId = null;
+let currentChatTitle = null;
 
 // Detect chat ID
 function detectChatId() {
@@ -327,9 +366,11 @@ function processMessages() {
   
   // Check for new chat
   const newChatId = detectChatId();
-  if (newChatId !== currentChatId) {
-    console.log(`New chat: ${currentChatId} -> ${newChatId}`);
+  const newTitle = getChatTitle();
+  if (newChatId !== currentChatId || (newTitle && newTitle !== currentChatTitle)) {
+    console.log(`New chat: ${currentChatId} -> ${newChatId}, title: ${newTitle}`);
     currentChatId = newChatId;
+    currentChatTitle = newTitle;
     tokenEstimator.resetChat();
     fileUploadTracker.reset();
     
@@ -338,7 +379,7 @@ function processMessages() {
       data: {
         chatId: newChatId,
         url: window.location.href,
-        title: document.title
+        title: newTitle || document.title || 'DeepSeek Chat'
       }
     });
   }
@@ -375,7 +416,8 @@ function processMessages() {
         usagePercent: tokenEstimator.getUsagePercentage(),
         remainingTokens: tokenEstimator.getRemainingTokens(),
         messageCount: processedMessages.length,
-        isUserMessage: processedMessages.some(m => m.isUser)
+        isUserMessage: processedMessages.some(m => m.isUser),
+        title: currentChatTitle
       }
     });
     
@@ -415,13 +457,13 @@ function setupFileUploadDetection() {
       if (mutation.type === 'childList') {
         mutation.addedNodes.forEach(node => {
           if (node.nodeType === 1) {
-            const className = node.className || '';
+            const className = String(node.className || '');
             const text = node.textContent || '';
             
             if (className.includes('upload') || 
                 className.includes('file') ||
                 text.includes('Upload') ||
-                (node.tagName === 'IMG' && node.src.includes('upload'))) {
+                (node.tagName === 'IMG' && node.src && node.src.includes('upload'))) {
               
               setTimeout(() => {
                 const files = fileUploadTracker.processUploadedFiles();
@@ -477,7 +519,7 @@ function initObserver() {
       if (mutation.type === 'childList') {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === 1) {
-            const className = node.className || '';
+            const className = String(node.className || '');
             const text = node.textContent || '';
             
             if ((className.includes('message') || 
@@ -514,7 +556,18 @@ function initObserver() {
 function initializeTracker() {
   // Initial chat detection
   currentChatId = detectChatId();
-  console.log(`Initial chat ID: ${currentChatId}`);
+  currentChatTitle = getChatTitle();
+  console.log(`Initial chat ID: ${currentChatId}, title: ${currentChatTitle}`);
+  
+  // Send initial chat info
+  chrome.runtime.sendMessage({
+    type: 'NEW_CHAT_STARTED',
+    data: {
+      chatId: currentChatId,
+      url: window.location.href,
+      title: currentChatTitle || document.title || 'DeepSeek Chat'
+    }
+  });
   
   // Set up observers
   initObserver();
