@@ -1,416 +1,119 @@
-// DeepSeek Token Tracker - Background Script
-console.log('DeepSeek Token Tracker background starting...');
+// Service worker. It keeps no state in memory (MV3 workers are killed after ~30 s idle);
+// everything lives in chrome.storage.local and every write goes through one queue.
+importScripts('providers.js');
 
-// Chat token tracking with file upload support
-let chatSessions = {
-  currentSession: null,
-  sessions: [],
-  settings: {
-    tokenLimit: 128000,
-    warningThreshold: 102400,
-    criticalThreshold: 115200,
-    showNotifications: true,
-    trackFileUploads: true
-  },
-  lastReset: new Date().toDateString()
+const DAY = 24 * 3600 * 1000;
+const COLORS = { ok: '#2e9e5b', warn: '#e08a00', crit: '#d64545', idle: '#6b7280' };
+
+let queue = Promise.resolve();
+const enqueue = (fn) => (queue = queue.then(fn, fn));
+
+const get = async (key, fallback) => {
+  const r = await chrome.storage.local.get(key);
+  return r[key] === undefined ? fallback : r[key];
 };
+const set = (obj) => chrome.storage.local.set(obj);
 
-// Initialize
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('Token Tracker installed');
-  
-  chrome.storage.local.get(['chatSessions']).then(result => {
-    if (result.chatSessions) {
-      chatSessions = result.chatSessions;
+async function handle(msg, sender) {
+  switch (msg.type) {
+    // content script -> latest snapshot of the open chat (replaces, never accumulates)
+    case 'CHAT_UPDATE': {
+      const { provider, chatId } = msg;
+      const key = `chat:${provider}:${chatId}`;
+      const old = await get(key, null);
+      const rec = {
+        ...(old || { started: Date.now(), files: [] }),
+        provider, chatId,
+        title: msg.title || old?.title || '',
+        url: msg.url,
+        tokens: msg.tokens,
+        msgCount: msg.msgCount,
+        updated: Date.now(),
+      };
+      await set({ [key]: rec });
+      await pruneChats();
+      return { ok: true };
     }
-    saveSessions();
-    updateBadge();
-  });
-  
-  // Create daily alarm
-  chrome.alarms.create('dailyReset', { periodInMinutes: 60 });
+
+    // a prompt was sent on a 'usage' provider
+    case 'PROMPT_SENT': {
+      const key = `usage:${msg.provider}`;
+      const list = await get(key, []);
+      list.push(msg.ts || Date.now());
+      await set({ [key]: list.filter((t) => Date.now() - t < 7 * DAY).slice(-500) });
+      return { ok: true };
+    }
+
+    case 'FILE_ADDED': {
+      const key = `chat:${msg.provider}:${msg.chatId}`;
+      const rec = (await get(key, null)) || {
+        provider: msg.provider, chatId: msg.chatId, title: '', url: '', tokens: 0, msgCount: 0,
+        started: Date.now(), updated: Date.now(), files: [],
+      };
+      rec.files = rec.files || [];
+      // same name + size in the same chat = same file, don't add twice
+      if (!rec.files.some((f) => f.name === msg.file.name && f.sizeKB === msg.file.sizeKB)) {
+        rec.files.push({ ...msg.file, addedAt: Date.now() });
+      }
+      await set({ [key]: rec });
+      return { ok: true };
+    }
+
+    case 'FILE_REMOVED': {
+      const key = `chat:${msg.provider}:${msg.chatId}`;
+      const rec = await get(key, null);
+      if (rec) {
+        rec.files = (rec.files || []).filter((f) => !(f.name === msg.name && f.sizeKB === msg.sizeKB));
+        await set({ [key]: rec });
+      }
+      return { ok: true };
+    }
+
+    case 'RESET_USAGE': {
+      await set({ [`usage:${msg.provider}`]: [] });
+      return { ok: true };
+    }
+
+    case 'RESET_CHAT': {
+      await chrome.storage.local.remove(`chat:${msg.provider}:${msg.chatId}`);
+      return { ok: true };
+    }
+
+    case 'CLEAR_ALL': {
+      const all = await chrome.storage.local.get(null);
+      const keys = Object.keys(all).filter((k) => /^(chat|usage|dismiss):/.test(k) || k === 'handoff');
+      await chrome.storage.local.remove(keys);
+      return { ok: true };
+    }
+
+    // content script -> badge for its own tab
+    case 'STATUS': {
+      const tabId = sender.tab?.id;
+      if (tabId == null) return { ok: false };
+      await chrome.action.setBadgeText({ tabId, text: msg.text || '' });
+      await chrome.action.setBadgeBackgroundColor({ tabId, color: COLORS[msg.level] || COLORS.idle });
+      if (msg.tip) await chrome.action.setTitle({ tabId, title: msg.tip });
+      return { ok: true };
+    }
+
+    case 'OPEN_TAB': {
+      await chrome.tabs.create({ url: msg.url });
+      return { ok: true };
+    }
+  }
+  return { error: 'unknown message ' + msg.type };
+}
+
+async function pruneChats() {
+  const all = await chrome.storage.local.get(null);
+  const chats = Object.entries(all).filter(([k]) => k.startsWith('chat:'));
+  if (chats.length < 60) return;
+  chats.sort((a, b) => (b[1].updated || 0) - (a[1].updated || 0));
+  const drop = chats.slice(50).map(([k]) => k);
+  if (drop.length) await chrome.storage.local.remove(drop);
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  enqueue(() => handle(msg, sender)).then(sendResponse, (e) => sendResponse({ error: String(e) }));
+  return true; // async response
 });
-
-// Load on startup
-chrome.storage.local.get(['chatSessions']).then(result => {
-  if (result.chatSessions) {
-    chatSessions = result.chatSessions;
-  }
-  updateBadge();
-});
-
-// Save to storage
-function saveSessions() {
-  chrome.storage.local.set({ chatSessions: chatSessions });
-}
-
-// Start new chat session
-function startNewChatSession(chatId, url, title) {
-  console.log(`Starting new chat session: ${chatId}, title: ${title}`);
-  
-  if (chatSessions.currentSession) {
-    endCurrentChatSession();
-  }
-  
-  chatSessions.currentSession = {
-    id: chatId,
-    startTime: new Date().toISOString(),
-    url: url,
-    title: title || 'DeepSeek Chat',
-    totalTokens: 0,
-    messageCount: 0,
-    fileUploads: [],
-    tokenHistory: [],
-    lastUpdate: new Date().toISOString()
-  };
-  
-  chatSessions.sessions.push(chatSessions.currentSession);
-  saveSessions();
-  updateBadge();
-  
-  return chatSessions.currentSession;
-}
-
-// End current session
-function endCurrentChatSession() {
-  if (!chatSessions.currentSession) return;
-  
-  chatSessions.currentSession.endTime = new Date().toISOString();
-  chatSessions.currentSession.ended = true;
-  chatSessions.currentSession = null;
-  saveSessions();
-  updateBadge();
-}
-
-// Update badge
-function updateBadge() {
-  if (!chatSessions.currentSession) {
-    chrome.action.setBadgeText({ text: '' });
-    chrome.action.setTitle({ 
-      title: 'DeepSeek Token Tracker\nNo active chat'
-    });
-    return;
-  }
-  
-  const tokens = chatSessions.currentSession.totalTokens || 0;
-  const limit = chatSessions.settings.tokenLimit || 128000;
-  const percent = Math.min(100, (tokens / limit) * 100);
-  
-  // Format badge text
-  let badgeText = '';
-  if (tokens > 0) {
-    if (tokens >= 100000) {
-      badgeText = Math.round(tokens / 1000) + 'K';
-    } else if (tokens >= 1000) {
-      badgeText = (tokens / 1000).toFixed(1) + 'K';
-    } else {
-      badgeText = tokens.toString();
-    }
-  }
-  
-  // Set badge
-  chrome.action.setBadgeText({ text: badgeText });
-  
-  // Set color
-  if (percent >= 90) {
-    chrome.action.setBadgeBackgroundColor({ color: '#ff4444' });
-  } else if (percent >= 70) {
-    chrome.action.setBadgeBackgroundColor({ color: '#ff9800' });
-  } else {
-    chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
-  }
-  
-  // Set tooltip
-  const remaining = Math.max(0, limit - tokens);
-  const remainingK = remaining >= 1000 ? (remaining / 1000).toFixed(1) + 'K' : remaining;
-  const title = chatSessions.currentSession.title || 'DeepSeek Chat';
-  chrome.action.setTitle({
-    title: `${title}\nTokens: ${formatNumber(tokens)}/${formatNumber(limit)} (${Math.round(percent)}%)\n` +
-           `Remaining: ${remainingK}\n` +
-           `Files: ${chatSessions.currentSession.fileUploads?.length || 0}\n` +
-           `Chats today: ${chatSessions.sessions.length}`
-  });
-}
-
-// Format numbers
-function formatNumber(num) {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
-  } else if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K';
-  }
-  return num.toString();
-}
-
-// Check token warnings
-function checkTokenWarnings(session) {
-  if (!chatSessions.settings.showNotifications) return;
-  
-  const tokens = session.totalTokens;
-  const limit = chatSessions.settings.tokenLimit;
-  const warning = chatSessions.settings.warningThreshold;
-  const critical = chatSessions.settings.criticalThreshold;
-  const percent = Math.round((tokens / limit) * 100);
-  
-  const history = session.tokenHistory || [];
-  if (history.length < 2) return;
-  
-  const prevTokens = history[history.length - 2].tokens || 0;
-  
-  if (prevTokens < warning && tokens >= warning) {
-    showNotification(
-      'Token Usage Warning',
-      `Chat "${session.title || 'DeepSeek Chat'}" is at ${percent}% capacity (${formatNumber(tokens)} tokens). ` +
-      `Consider starting a new chat soon.`
-    );
-  } else if (prevTokens < critical && tokens >= critical) {
-    showNotification(
-      'Token Usage Critical!',
-      `Chat "${session.title || 'DeepSeek Chat'}" is at ${percent}% capacity (${formatNumber(tokens)} tokens). ` +
-      `Context window almost full!`
-    );
-  }
-}
-
-// Show notification
-function showNotification(title, message) {
-  try {
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-      title: title,
-      message: message
-    });
-  } catch (e) {
-    console.log('Notification error:', e);
-  }
-}
-
-// Handle messages
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Message:', request.type, request.data);
-  
-  if (request.type === 'NEW_CHAT_STARTED') {
-    const data = request.data || {};
-    const session = startNewChatSession(data.chatId, data.url, data.title);
-    sendResponse({ success: true, session: session });
-    return true;
-  }
-  
-  if (request.type === 'TOKENS_UPDATED') {
-    const data = request.data || {};
-    
-    let session = chatSessions.currentSession;
-    if (!session || session.id !== data.chatId) {
-      session = startNewChatSession(data.chatId, sender.tab?.url, data.title || 'DeepSeek Chat');
-    } else if (data.title && session.title !== data.title) {
-      // Update title if changed
-      session.title = data.title;
-    }
-    
-    session.totalTokens = data.totalTokens || 0;
-    session.messageCount = (session.messageCount || 0) + (data.messageCount || 0);
-    session.lastUpdate = new Date().toISOString();
-    
-    if (!session.tokenHistory) session.tokenHistory = [];
-    session.tokenHistory.push({
-      timestamp: new Date().toISOString(),
-      tokens: session.totalTokens,
-      newTokens: data.newTokens || 0,
-      type: 'message'
-    });
-    
-    if (session.tokenHistory.length > 100) {
-      session.tokenHistory = session.tokenHistory.slice(-100);
-    }
-    
-    saveSessions();
-    updateBadge();
-    checkTokenWarnings(session);
-    
-    sendResponse({
-      success: true,
-      session: session,
-      totalTokens: session.totalTokens,
-      limit: chatSessions.settings.tokenLimit,
-      remaining: Math.max(0, chatSessions.settings.tokenLimit - session.totalTokens),
-      percent: Math.round((session.totalTokens / chatSessions.settings.tokenLimit) * 100)
-    });
-    
-    return true;
-  }
-  
-  if (request.type === 'FILE_UPLOAD_DETECTED') {
-    const data = request.data || {};
-    
-    if (!chatSessions.settings.trackFileUploads) {
-      sendResponse({ success: false, reason: 'File tracking disabled' });
-      return true;
-    }
-    
-    let session = chatSessions.currentSession;
-    if (!session || session.id !== data.chatId) {
-      session = startNewChatSession(data.chatId, sender.tab?.url, 'DeepSeek Chat');
-    }
-    
-    // Add file tokens
-    const fileTokens = data.totalTokens || 0;
-    session.totalTokens = (session.totalTokens || 0) + fileTokens;
-    
-    // Track file uploads
-    if (!session.fileUploads) session.fileUploads = [];
-    data.files?.forEach(file => {
-      session.fileUploads.push({
-        ...file,
-        addedAt: new Date().toISOString()
-      });
-    });
-    
-    // Update session
-    session.lastUpdate = new Date().toISOString();
-    
-    // Add to token history
-    if (!session.tokenHistory) session.tokenHistory = [];
-    session.tokenHistory.push({
-      timestamp: new Date().toISOString(),
-      tokens: session.totalTokens,
-      newTokens: fileTokens,
-      type: 'file_upload',
-      files: data.files
-    });
-    
-    saveSessions();
-    updateBadge();
-    checkTokenWarnings(session);
-    
-    sendResponse({
-      success: true,
-      session: session,
-      files: data.files,
-      totalTokens: session.totalTokens,
-      fileTokens: fileTokens,
-      fileCount: session.fileUploads.length
-    });
-    
-    return true;
-  }
-  
-  if (request.type === 'MANUAL_FILE_ADDED') {
-    const data = request.data || {};
-    
-    let session = chatSessions.currentSession;
-    if (!session) {
-      session = startNewChatSession('manual_' + Date.now(), '', 'Manual Chat');
-    }
-    
-    // Add file tokens
-    const fileTokens = data.tokens || 0;
-    session.totalTokens = (session.totalTokens || 0) + fileTokens;
-    
-    // Track file
-    if (!session.fileUploads) session.fileUploads = [];
-    session.fileUploads.push({
-      fileName: data.fileName,
-      extension: data.fileName.split('.').pop(),
-      sizeKB: data.sizeKB,
-      tokens: fileTokens,
-      description: data.description || 'Manual entry',
-      addedAt: new Date().toISOString(),
-      manual: true
-    });
-    
-    saveSessions();
-    updateBadge();
-    checkTokenWarnings(session);
-    
-    sendResponse({
-      success: true,
-      session: session,
-      totalTokens: session.totalTokens
-    });
-    
-    return true;
-  }
-  
-  if (request.type === 'GET_STATS') {
-    const todaySessions = chatSessions.sessions.filter(s => 
-      new Date(s.startTime).toDateString() === new Date().toDateString()
-    );
-    
-    sendResponse({
-      currentSession: chatSessions.currentSession,
-      sessionsToday: todaySessions,
-      totalSessions: chatSessions.sessions.length,
-      settings: chatSessions.settings,
-      today: new Date().toDateString()
-    });
-    return true;
-  }
-  
-  // Get filtered list of sessions
-  if (request.type === 'GET_SESSIONS') {
-    const filter = request.filter || 'today'; // 'today', '7days', 'all'
-    const now = new Date();
-    let filtered = chatSessions.sessions;
-
-    if (filter === 'today') {
-      const todayStr = now.toDateString();
-      filtered = filtered.filter(s => new Date(s.startTime).toDateString() === todayStr);
-    } else if (filter === '7days') {
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter(s => new Date(s.startTime) >= weekAgo);
-    }
-    // else 'all' – return everything
-
-    sendResponse({
-      sessions: filtered,
-      currentSessionId: chatSessions.currentSession?.id || null,
-      settings: chatSessions.settings
-    });
-    return true;
-  }
-  
-  // Get a single session by ID
-  if (request.type === 'GET_SESSION') {
-    const id = request.id;
-    const session = chatSessions.sessions.find(s => s.id === id);
-    sendResponse({ 
-      session: session || null, 
-      settings: chatSessions.settings 
-    });
-    return true;
-  }
-  
-  if (request.type === 'END_CURRENT_CHAT') {
-    endCurrentChatSession();
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  if (request.type === 'UPDATE_SETTINGS') {
-    const settings = request.settings || {};
-    chatSessions.settings = { ...chatSessions.settings, ...settings };
-    saveSessions();
-    sendResponse({ success: true, settings: chatSessions.settings });
-    return true;
-  }
-  
-  if (request.type === 'RESET_CHAT') {
-    const data = request.data || {};
-    if (data.chatId && chatSessions.currentSession?.id === data.chatId) {
-      chatSessions.currentSession.totalTokens = 0;
-      chatSessions.currentSession.fileUploads = [];
-      chatSessions.currentSession.tokenHistory = [];
-      saveSessions();
-      updateBadge();
-    }
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  sendResponse({ error: 'Unknown message type' });
-  return false;
-});
-
-// Update badge periodically
-setInterval(updateBadge, 30000);

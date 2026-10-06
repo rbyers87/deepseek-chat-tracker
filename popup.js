@@ -1,325 +1,191 @@
-// DeepSeek Token Tracker Popup
-console.log('Token Tracker popup loading...');
+const $ = (id) => document.getElementById(id);
+const fmtK = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e5 ? 0 : 1) + 'K' : String(Math.round(n)));
+const fmtDur = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
 
-const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+let tab = null, pid = null, st = null;
 
-let selectedSessionId = null; // null = live session
+function say(text, err) { const m = $('msg'); m.textContent = text; m.className = 'msg' + (err ? ' err' : ''); }
 
-// Format tokens for display
-function formatTokens(tokens) {
-  if (tokens >= 1000000) {
-    return (tokens / 1000000).toFixed(1) + 'M';
-  } else if (tokens >= 1000) {
-    return (tokens / 1000).toFixed(1) + 'K';
-  }
-  return tokens.toString();
+async function init() {
+  [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  try { pid = tab?.url ? providerForHost(new URL(tab.url).hostname) : null; } catch { pid = null; }
+  await renderAll();
+  setInterval(refreshLive, 2000);
 }
 
-// Core rendering function – used for both live and historical sessions
-function renderStats(session, settings, isHistorical = false) {
-  const titleEl = document.getElementById('chatTitle');
-  if (!session) {
-    document.getElementById('todayCount').textContent = '0';
-    document.getElementById('dailyLimit').textContent = formatTokens(settings.tokenLimit);
-    document.getElementById('remainingCount').textContent = formatTokens(settings.tokenLimit);
-    document.getElementById('progressFill').style.width = '0%';
-    document.getElementById('percentage').textContent = '0%';
-    document.getElementById('warningMessage').textContent = 'No active chat';
-    document.getElementById('fileTokenCount').textContent = '0 tokens';
-    document.getElementById('fileUploadsContainer').innerHTML = '<div class="no-files">No files uploaded in this chat</div>';
-    document.getElementById('historicalNote').style.display = 'none';
-    titleEl.textContent = 'No active chat';
+async function refreshLive() {
+  if (!pid) return;
+  try { st = await chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' }); } catch { st = null; }
+  renderLive();
+}
+
+async function renderAll() {
+  renderAllList();
+  if (!pid) {
+    $('where').textContent = 'No supported AI site in this tab';
+    $('empty').hidden = false;
     return;
   }
-  
-  const tokens = session.totalTokens || 0;
-  const limit = settings.tokenLimit || 128000;
-  const remaining = Math.max(0, limit - tokens);
-  const percent = Math.min(100, (tokens / limit) * 100);
-  
-  // Update chat title
-  titleEl.textContent = session.title || 'DeepSeek Chat';
-  
-  // Update main stats
-  document.getElementById('todayCount').textContent = formatTokens(tokens);
-  document.getElementById('dailyLimit').textContent = formatTokens(limit);
-  document.getElementById('remainingCount').textContent = formatTokens(remaining);
-  document.getElementById('progressFill').style.width = percent + '%';
-  document.getElementById('percentage').textContent = Math.round(percent) + '%';
-  
-  // Color coding
-  const progressFill = document.getElementById('progressFill');
-  if (percent >= 90) {
-    progressFill.style.background = '#ff4444';
-    document.getElementById('warningMessage').innerHTML = 
-      '<span class="critical">⚠️ CRITICAL: Context almost full!</span>';
-  } else if (percent >= 70) {
-    progressFill.style.background = '#ff9800';
-    document.getElementById('warningMessage').innerHTML = 
-      '<span class="warning">⚠️ Warning: High token usage</span>';
+  $('where').textContent = PROVIDERS[pid].name + (PROVIDERS[pid].mode === 'context' ? ' · chat length' : ' · free-tier usage');
+  await buildSettings();
+  await refreshLive();
+}
+
+function renderLive() {
+  const live = $('live'), empty = $('empty');
+  if (!st) {
+    live.hidden = true; $('actions').hidden = true; $('filesBox').hidden = true; $('diagBox').hidden = true;
+    empty.hidden = false;
+    $('empty').firstChild.textContent = 'Can’t reach this tab yet. Reload the page (the extension was probably just installed or updated).';
+    return;
+  }
+  empty.hidden = true; live.hidden = false; $('actions').hidden = false;
+  $('chatTitle').textContent = st.title || (st.chatKey === 'new' ? 'New chat' : st.name + ' chat');
+
+  const bar = $('barFill');
+  bar.style.width = Math.max(st.pct ? 3 : 0, Math.round(st.pct)) + '%';
+  bar.className = st.level === 'crit' ? 'crit' : st.level === 'warn' ? 'warn' : '';
+  const warn = $('warn');
+  warn.className = 'warnline';
+
+  if (st.mode === 'context') {
+    $('bigValue').textContent = '~' + fmtK(st.tokens);
+    $('bigOf').textContent = `of ${fmtK(st.limit)} tokens · ${Math.round(st.pct)}%`;
+    $('liveLine').textContent = `${st.msgCount} messages · ${fmtK(st.remaining)} left` + (st.fileTokens ? ` · files ${fmtK(st.fileTokens)}` : '');
+    $('filesBox').hidden = false;
+    renderFiles();
+    $('resetUsage').hidden = true;
   } else {
-    progressFill.style.background = '#4CAF50';
-    document.getElementById('warningMessage').textContent = '';
+    $('bigValue').textContent = String(st.used);
+    $('bigOf').textContent = st.limit ? `of ~${st.limit} prompts · last ${st.windowHours} h` : `prompts in the last ${st.windowHours} h (no limit set)`;
+    $('liveLine').textContent = st.resetsInMs ? `Next slot opens in ${fmtDur(st.resetsInMs)}` : 'Nothing to wait for';
+    $('filesBox').hidden = true;
+    $('resetUsage').hidden = false;
   }
-  
-  // Update file display
-  updateFileDisplay(session);
-  
-  // Show/hide historical note
-  document.getElementById('historicalNote').style.display = isHistorical ? 'block' : 'none';
-  
-  // Update time
-  document.getElementById('updateTime').textContent = 
-    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (st.limitHit) { warn.textContent = 'The site says you’ve hit its limit.'; warn.classList.add('crit'); }
+  else if (st.level === 'crit') { warn.textContent = st.mode === 'context' ? 'Almost full. Hand off now.' : 'Limit reached.'; warn.classList.add('crit'); }
+  else if (st.level === 'warn') { warn.textContent = st.mode === 'context' ? 'Getting full. Consider a handoff.' : 'Getting close to the limit.'; warn.classList.add('warn'); }
+  else warn.textContent = '';
+
+  // diagnostics
+  $('diagBox').hidden = false;
+  const d = st.diag || {};
+  $('diag').textContent = [
+    `provider: ${st.provider}   chat: ${st.chatKey}`,
+    `your messages:  ${d.userN} via ${d.user || 'NO MATCH'}${d.userEstimated ? '  (estimated from page text)' : ''}`,
+    `AI messages:    ${d.assistantN} via ${d.assistant || 'NO MATCH'}`,
+    `message box:    ${d.composer ? 'found' : 'NOT FOUND'}`,
+  ].join('\n');
 }
 
-// Update file display (unchanged)
-function updateFileDisplay(session) {
-  const container = document.getElementById('fileUploadsContainer');
-  const tokenCount = document.getElementById('fileTokenCount');
-  
-  if (!session.fileUploads || session.fileUploads.length === 0) {
-    container.innerHTML = '<div class="no-files">No files uploaded in this chat</div>';
-    tokenCount.textContent = '0 tokens';
-    return;
+function renderFiles() {
+  const list = $('fileList');
+  list.textContent = '';
+  const files = st.files || [];
+  $('fileTokens').textContent = files.length ? `${fmtK(st.fileTokens)} tokens` : 'none yet';
+  for (const f of files) {
+    const row = document.createElement('div');
+    row.className = 'file';
+    const a = document.createElement('span'); a.textContent = f.name;
+    const b = document.createElement('span'); b.textContent = `~${fmtK(f.tokens)}`; b.title = f.how || '';
+    const x = document.createElement('button'); x.textContent = '×'; x.title = 'Remove from the count';
+    x.onclick = async () => {
+      await chrome.runtime.sendMessage({ type: 'FILE_REMOVED', provider: pid, chatId: st.chatKey, name: f.name, sizeKB: f.sizeKB });
+      setTimeout(refreshLive, 200);
+    };
+    row.append(a, b, x);
+    list.append(row);
   }
-  
-  const totalFileTokens = session.fileUploads.reduce((sum, file) => sum + (file.tokens || 0), 0);
-  tokenCount.textContent = formatTokens(totalFileTokens) + ' tokens';
-  
-  let html = '';
-  session.fileUploads.forEach((file, index) => {
-    const manualIcon = file.manual ? '✍️ ' : '📎 ';
-    html += `
-      <div class="file-item">
-        <div class="file-name">
-          ${manualIcon}${file.fileName}
-          <span class="file-size">${file.sizeKB.toFixed(1)}KB</span>
-        </div>
-        <div class="file-info">
-          ${file.description} • ~${formatTokens(file.tokens)} tokens
-        </div>
-      </div>
-    `;
-  });
-  
-  container.innerHTML = html;
 }
 
-// Load live data from background (for current session)
-function loadData() {
-  browserAPI.runtime.sendMessage({ type: 'GET_STATS' })
-    .then(response => {
-      if (response) {
-        // If we are in "live" mode (no selected session), render live
-        if (selectedSessionId === null) {
-          renderStats(response.currentSession, response.settings, false);
-        }
-        // Always refresh the session list (to update current indicator)
-        loadSessions(document.getElementById('filterSelect').value);
-      }
-    })
-    .catch(error => {
-      console.error('Error loading data:', error);
-    });
-}
-
-// Load and render the list of sessions based on filter
-function loadSessions(filter) {
-  browserAPI.runtime.sendMessage({ type: 'GET_SESSIONS', filter: filter })
-    .then(response => {
-      if (response) {
-        renderSessionList(response.sessions, response.currentSessionId);
-      }
-    })
-    .catch(err => console.error('Error loading sessions:', err));
-}
-
-// Render the session list in the popup
-function renderSessionList(sessions, currentId) {
-  const container = document.getElementById('sessionList');
-  if (!sessions || sessions.length === 0) {
-    container.innerHTML = '<div style="color:rgba(255,255,255,0.5); font-size:11px; text-align:center; padding:8px;">No sessions in this period</div>';
-    return;
+// ----- settings -----
+async function buildSettings() {
+  const P = PROVIDERS[pid];
+  const saved = (await chrome.storage.local.get('settings')).settings?.[pid] || {};
+  const S = { ...P.defaults, ...saved };
+  const fields = P.mode === 'context'
+    ? [['contextLimit', 'Context limit (tokens)', 1000], ['warnPct', 'Warn at %', 1], ['critPct', 'Urgent at %', 1]]
+    : [['limit', 'Prompts allowed (0 = unknown)', 1], ['windowHours', 'Window (hours)', 1], ['warnPct', 'Warn at %', 1]];
+  $('setName').textContent = P.name;
+  const body = $('settingsBody');
+  body.textContent = '';
+  for (const [key, label, step] of fields) {
+    const row = document.createElement('div'); row.className = 'setrow';
+    const l = document.createElement('label'); l.textContent = label;
+    const i = document.createElement('input'); i.type = 'number'; i.min = 0; i.step = step; i.value = S[key];
+    i.onchange = async () => {
+      const all = (await chrome.storage.local.get('settings')).settings || {};
+      all[pid] = { ...(all[pid] || {}), [key]: Math.max(0, Number(i.value) || 0) };
+      await chrome.storage.local.set({ settings: all });
+      setTimeout(refreshLive, 200);
+    };
+    row.append(l, i); body.append(row);
   }
+  $('settingsBox').hidden = false;
 
-  // Sort by start time descending (newest first)
-  const sorted = sessions.slice().sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-
-  let html = '';
-  sorted.forEach(session => {
-    const isCurrent = session.id === currentId;
-    const start = new Date(session.startTime).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-    const tokens = session.totalTokens || 0;
-    const files = session.fileUploads?.length || 0;
-    const label = session.title || 'DeepSeek Chat';
-    const activeClass = isCurrent ? ' current' : '';
-    const selectedClass = (selectedSessionId === session.id) ? ' current' : '';
-    html += `
-      <div class="session-item${activeClass}${selectedClass}" data-id="${session.id}" style="padding:6px 8px; border-radius:4px; margin-bottom:4px; cursor:pointer; display:flex; justify-content:space-between; font-size:11px; transition:0.2s;">
-        <span>${isCurrent ? '● ' : ''}${label}</span>
-        <span>${start} • ${formatTokens(tokens)} tokens • ${files} files</span>
-      </div>
-    `;
-  });
-
-  container.innerHTML = html;
-
-  // Add click listeners to each session item
-  container.querySelectorAll('.session-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const id = el.dataset.id;
-      selectSession(id);
-    });
-  });
+  const sel = $('target');
+  sel.textContent = '';
+  sel.append(new Option(`New chat in ${P.name}`, pid));
+  for (const [id, p] of Object.entries(PROVIDERS)) if (id !== pid) sel.append(new Option(`Continue in ${p.name}`, id));
 }
 
-// Select a historical session by ID and display its stats
-function selectSession(sessionId) {
-  browserAPI.runtime.sendMessage({ type: 'GET_SESSION', id: sessionId })
-    .then(response => {
-      if (response && response.session) {
-        selectedSessionId = sessionId;
-        renderStats(response.session, response.settings, true);
-        // Update the session list to highlight the selected one
-        loadSessions(document.getElementById('filterSelect').value);
-      }
-    })
-    .catch(err => console.error('Error loading session:', err));
-}
-
-// Switch back to the live (current) session
-function goBackToCurrent() {
-  selectedSessionId = null;
-  loadData(); // reloads live stats
-  // Also refresh the session list to remove highlights
-  loadSessions(document.getElementById('filterSelect').value);
-}
-
-// Add file manually (unchanged)
-function addFileManually() {
-  const fileName = prompt('Enter filename with extension (e.g., document.pdf):', 'document.pdf');
-  if (!fileName) return;
-  
-  const fileSize = prompt('Enter file size (e.g., 500 for 500KB, 2 for 2MB):', '500');
-  if (!fileSize || isNaN(parseFloat(fileSize))) {
-    alert('Please enter a valid number');
-    return;
-  }
-  
-  let sizeKB = parseFloat(fileSize);
-  const unit = prompt('Unit (KB or MB):', 'KB').toLowerCase();
-  
-  if (unit === 'mb') {
-    sizeKB = sizeKB * 1024;
-  }
-  
-  const extension = fileName.split('.').pop().toLowerCase();
-  let tokensPerKB = 150; // Default
-  
-  const tokenEstimates = {
-    txt: 256, js: 333, py: 333, java: 333, cpp: 333, c: 333,
-    html: 333, css: 333, json: 333, xml: 333, md: 256,
-    pdf: 200, doc: 200, docx: 200,
-    jpg: 100, jpeg: 100, png: 100, gif: 100,
-    csv: 256, xls: 200, xlsx: 200
-  };
-  
-  if (tokenEstimates[extension]) {
-    tokensPerKB = tokenEstimates[extension];
-  }
-  
-  const tokens = Math.ceil(sizeKB * tokensPerKB);
-  const description = getFileDescription(extension);
-  
-  browserAPI.runtime.sendMessage({
-    type: 'MANUAL_FILE_ADDED',
-    data: {
-      fileName: fileName,
-      sizeKB: sizeKB,
-      tokens: tokens,
-      description: description
-    }
-  }).then(response => {
-    if (response.success) {
-      alert(`Added ${fileName}\n${sizeKB.toFixed(1)}KB ≈ ${formatTokens(tokens)} tokens`);
-      loadData();
-    }
-  });
-}
-
-function getFileDescription(extension) {
-  const descriptions = {
-    txt: 'Text file', js: 'JavaScript', py: 'Python', java: 'Java', cpp: 'C++', c: 'C',
-    html: 'HTML', css: 'CSS', json: 'JSON', xml: 'XML', md: 'Markdown',
-    pdf: 'PDF document', doc: 'Word document', docx: 'Word document',
-    jpg: 'Image (JPG)', jpeg: 'Image (JPEG)', png: 'Image (PNG)', gif: 'Image (GIF)',
-    csv: 'CSV file', xls: 'Excel file', xlsx: 'Excel file'
-  };
-  
-  return descriptions[extension] || 'File';
-}
-
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('Popup loaded');
-  
-  // Load initial data and session list
-  loadData(); // this also calls loadSessions internally
-  
-  // Set up auto-refresh for live data
-  const refreshInterval = setInterval(() => {
-    // Only auto-refresh if we are viewing live
-    if (selectedSessionId === null) {
-      loadData();
-    }
-  }, 2000);
-  
-  // Button event listeners
-  document.getElementById('refreshBtn').addEventListener('click', () => {
-    if (selectedSessionId === null) {
-      loadData();
+// ----- all AIs -----
+async function renderAllList() {
+  const all = await chrome.storage.local.get(null);
+  const settings = all.settings || {};
+  const list = $('allList');
+  list.textContent = '';
+  for (const [id, p] of Object.entries(PROVIDERS)) {
+    const S = { ...p.defaults, ...(settings[id] || {}) };
+    const row = document.createElement('div'); row.className = 'all';
+    const a = document.createElement('span'); a.textContent = p.name;
+    const b = document.createElement('span');
+    if (p.mode === 'usage') {
+      const used = (all[`usage:${id}`] || []).filter((t) => Date.now() - t < S.windowHours * 3600e3).length;
+      b.textContent = `${used}${S.limit ? ' / ' + S.limit : ''} in ${S.windowHours} h`;
     } else {
-      // If viewing historical, reload that session
-      selectSession(selectedSessionId);
+      const chats = Object.values(all).filter((v) => v && v.provider === id && v.chatId).sort((x, y) => y.updated - x.updated);
+      b.textContent = chats.length ? `${chats.length} chats · latest ${Math.round((chats[0].tokens / S.contextLimit) * 100)}%` : 'no chats yet';
     }
+    row.append(a, b); list.append(row);
+  }
+}
+
+// ----- buttons -----
+async function toTab(msg) {
+  try { return await chrome.tabs.sendMessage(tab.id, msg); }
+  catch { say('Reload the page first.', true); return null; }
+}
+$('ask').onclick = async () => { const r = await toTab({ type: 'ASK_SUMMARY' }); if (r) { say('Request is in the message box. Press send.'); } };
+$('open').onclick = async () => { const r = await toTab({ type: 'OPEN_HANDOFF', target: $('target').value }); if (r) say('Opened. The handoff is copied too.'); };
+$('banner').onclick = async () => { const r = await toTab({ type: 'SHOW_BANNER' }); if (r) window.close(); };
+$('copy').onclick = async () => {
+  const r = await toTab({ type: 'GET_HANDOFF' });
+  if (!r) return;
+  try { await navigator.clipboard.writeText(r.text); say('Handoff copied.'); } catch { say('Copy failed.', true); }
+};
+$('addFile').onclick = async () => {
+  const input = prompt('File name and size, e.g. "report.pdf 500KB" or "data.csv 2MB"');
+  const m = input && input.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s*(kb|mb)?$/i);
+  if (!m) return;
+  const sizeKB = parseFloat(m[2]) * (m[3]?.toLowerCase() === 'mb' ? 1024 : 1);
+  const ext = (m[1].split('.').pop() || '').toLowerCase();
+  const per = { txt: 256, md: 256, csv: 256, pdf: 120, doc: 200, docx: 200, xls: 200, xlsx: 200, jpg: 100, jpeg: 100, png: 100 }[ext] ?? 333;
+  await chrome.runtime.sendMessage({
+    type: 'FILE_ADDED', provider: pid, chatId: st.chatKey,
+    file: { name: m[1], ext, sizeKB, tokens: Math.ceil(sizeKB * per), how: 'manual estimate' },
   });
-  
-  document.getElementById('resetBtn').addEventListener('click', () => {
-    if (confirm('Reset current chat token count to zero?')) {
-      browserAPI.runtime.sendMessage({ type: 'END_CURRENT_CHAT' })
-        .then(() => {
-          selectedSessionId = null;
-          loadData();
-        });
-    }
-  });
-  
-  document.getElementById('endChatBtn').addEventListener('click', () => {
-    if (confirm('End current chat session?')) {
-      browserAPI.runtime.sendMessage({ type: 'END_CURRENT_CHAT' })
-        .then(() => {
-          selectedSessionId = null;
-          loadData();
-        });
-    }
-  });
-  
-  document.getElementById('addFileBtn').addEventListener('click', addFileManually);
-  
-  // Session selector events
-  document.getElementById('filterSelect').addEventListener('change', (e) => {
-    loadSessions(e.target.value);
-  });
-  
-  document.getElementById('refreshSessionsBtn').addEventListener('click', () => {
-    loadSessions(document.getElementById('filterSelect').value);
-  });
-  
-  document.getElementById('backToCurrentBtn').addEventListener('click', goBackToCurrent);
-  
-  // Clean up on close
-  window.addEventListener('beforeunload', () => {
-    clearInterval(refreshInterval);
-  });
-});
+  setTimeout(refreshLive, 200);
+};
+$('resetUsage').onclick = async () => {
+  if (!confirm('Reset the prompt count for ' + PROVIDERS[pid].name + '?')) return;
+  await chrome.runtime.sendMessage({ type: 'RESET_USAGE', provider: pid });
+  setTimeout(() => { refreshLive(); renderAllList(); }, 200);
+};
+$('clearAll').onclick = async () => {
+  if (!confirm('Delete all saved chats, usage counts and pending handoffs? Your limit settings are kept.')) return;
+  await chrome.runtime.sendMessage({ type: 'CLEAR_ALL' });
+  renderAll();
+};
+
+init();

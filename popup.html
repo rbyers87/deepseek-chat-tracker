@@ -2,397 +2,69 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      width: 350px;
-      min-height: 420px;
-      padding: 20px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      overflow: hidden;
-    }
-    
-    .header {
-      text-align: center;
-      margin-bottom: 20px;
-      padding-bottom: 15px;
-      border-bottom: 1px solid rgba(255,255,255,0.3);
-    }
-    
-    h1 {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 5px;
-    }
-    
-    .subtitle {
-      font-size: 11px;
-      opacity: 0.8;
-    }
-    
-    .stats-card {
-      background: rgba(255,255,255,0.1);
-      padding: 15px;
-      border-radius: 10px;
-      margin-bottom: 15px;
-      backdrop-filter: blur(10px);
-    }
-    
-    .stat-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    .stat-row:last-child {
-      border-bottom: none;
-      margin-bottom: 0;
-    }
-    
-    .stat-label {
-      opacity: 0.9;
-    }
-    
-    .stat-value {
-      font-weight: bold;
-      font-size: 16px;
-    }
-    
-    .chat-title {
-      font-size: 13px;
-      font-weight: 500;
-      text-align: center;
-      margin-bottom: 12px;
-      opacity: 0.9;
-      word-break: break-word;
-    }
-    
-    .progress-container {
-      margin: 20px 0;
-    }
-    
-    .progress-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
-      font-size: 12px;
-    }
-    
-    .progress-bar {
-      height: 10px;
-      background: rgba(255,255,255,0.2);
-      border-radius: 5px;
-      overflow: hidden;
-    }
-    
-    .progress-fill {
-      height: 100%;
-      background: #4CAF50;
-      width: 0%;
-      border-radius: 5px;
-      transition: width 0.5s ease;
-    }
-    
-    .buttons {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin: 20px 0;
-    }
-    
-    .btn {
-      padding: 10px;
-      background: rgba(255,255,255,0.2);
-      border: none;
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-    
-    .btn:hover {
-      background: rgba(255,255,255,0.3);
-    }
-    
-    .btn-primary {
-      background: rgba(255,255,255,0.3);
-      font-weight: 600;
-    }
-    
-    .limit-control {
-      margin-top: 15px;
-      padding-top: 15px;
-      border-top: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    .limit-input-group {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-    }
-    
-    .limit-input {
-      flex: 1;
-      padding: 8px;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 4px;
-      color: white;
-      font-size: 13px;
-    }
-    
-    .limit-input::placeholder {
-      color: rgba(255,255,255,0.6);
-    }
-    
-    .files-container {
-      margin-top: 15px;
-      padding-top: 15px;
-      border-top: 1px solid rgba(255,255,255,0.1);
-    }
-    
-    .files-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
-      font-size: 11px;
-    }
-    
-    .file-tokens {
-      color: #4CAF50;
-      font-weight: bold;
-    }
-    
-    .file-item {
-      background: rgba(255,255,255,0.05);
-      padding: 8px;
-      border-radius: 4px;
-      margin-bottom: 6px;
-      font-size: 11px;
-    }
-    
-    .file-name {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 3px;
-    }
-    
-    .file-size {
-      color: rgba(255,255,255,0.6);
-      font-size: 10px;
-    }
-    
-    .file-info {
-      color: rgba(255,255,255,0.7);
-      font-size: 10px;
-    }
-    
-    .no-files {
-      text-align: center;
-      color: rgba(255,255,255,0.5);
-      font-size: 11px;
-      font-style: italic;
-      padding: 10px;
-    }
-    
-    .status-bar {
-      font-size: 10px;
-      text-align: center;
-      margin-top: 15px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255,255,255,0.1);
-      opacity: 0.7;
-    }
-    
-    .warning {
-      color: #ffcc00;
-      font-weight: bold;
-    }
-    
-    .critical {
-      color: #ff4444;
-      font-weight: bold;
-    }
-    
-    .add-file-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 8px;
-      background: rgba(255,255,255,0.1);
-      border: 1px dashed rgba(255,255,255,0.3);
-      border-radius: 4px;
-      color: white;
-      cursor: pointer;
-      font-size: 11px;
-    }
-    
-    .add-file-btn:hover {
-      background: rgba(255,255,255,0.2);
-    }
-
-    /* New styles for session selector */
-    .session-selector {
-      margin-bottom: 15px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-
-    .session-selector select {
-      flex: 1;
-      padding: 6px;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 4px;
-      color: white;
-      font-size: 12px;
-    }
-
-    .session-selector select option {
-      background: #2d2d2d;
-      color: white;
-    }
-
-    #sessionList {
-      max-height: 140px;
-      overflow-y: auto;
-      background: rgba(255,255,255,0.05);
-      border-radius: 4px;
-      padding: 4px;
-      margin-top: 6px;
-    }
-
-    #sessionList::-webkit-scrollbar {
-      width: 4px;
-    }
-    #sessionList::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.3);
-      border-radius: 2px;
-    }
-
-    .session-item {
-      padding: 6px 8px;
-      border-radius: 4px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      transition: background 0.2s;
-    }
-    .session-item:hover {
-      background: rgba(255,255,255,0.1) !important;
-    }
-    .session-item.current {
-      background: rgba(255,255,255,0.15);
-    }
-
-    .back-btn {
-      font-size: 10px;
-      padding: 4px 8px;
-      margin-top: 6px;
-      background: rgba(255,255,255,0.1);
-      border: none;
-      border-radius: 4px;
-      color: white;
-      cursor: pointer;
-      transition: 0.2s;
-    }
-    .back-btn:hover {
-      background: rgba(255,255,255,0.2);
-    }
-
-    .historical-note {
-      font-size: 10px;
-      opacity: 0.7;
-      text-align: center;
-      margin-top: 4px;
-      font-style: italic;
-    }
-  </style>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="header">
-    <h1>DeepSeek Token Tracker</h1>
-    <div class="subtitle">Track chat context usage including files</div>
+  <header>
+    <h1>AI Chat Limit Tracker</h1>
+    <div id="where" class="sub">&nbsp;</div>
+  </header>
+
+  <section id="live" class="card" hidden>
+    <div id="chatTitle" class="chat-title"></div>
+    <div class="big"><span id="bigValue">0</span><span id="bigOf" class="of"></span></div>
+    <div class="bar"><i id="barFill"></i></div>
+    <div id="liveLine" class="sub"></div>
+    <div id="warn" class="warnline"></div>
+  </section>
+
+  <section id="empty" class="card" hidden>
+    Open a supported AI site (DeepSeek, ChatGPT, Claude, Gemini, Copilot, Grok, Perplexity) and click this icon again.
+    <div id="emptyHint" class="sub"></div>
+  </section>
+
+  <section id="actions" hidden>
+    <button id="ask" class="wide">1 · Ask the AI for a handoff summary</button>
+    <div class="row">
+      <select id="target"></select>
+      <button id="open" class="primary">2 · Open</button>
+    </div>
+    <div class="row">
+      <button id="copy">Copy handoff</button>
+      <button id="banner">Show warning</button>
+    </div>
+    <div id="msg" class="msg"></div>
+  </section>
+
+  <section id="filesBox" class="card" hidden>
+    <div class="row between"><strong>Attached files</strong><span id="fileTokens" class="sub"></span></div>
+    <div id="fileList"></div>
+    <button id="addFile" class="wide ghost">+ Add a file manually</button>
+  </section>
+
+  <details id="settingsBox" hidden>
+    <summary>Limits for <span id="setName"></span></summary>
+    <div id="settingsBody"></div>
+    <div class="note">Free-tier limits aren't published exactly and change often. Adjust these to match what you actually get.</div>
+  </details>
+
+  <details id="allBox">
+    <summary>All AIs</summary>
+    <div id="allList"></div>
+  </details>
+
+  <details id="diagBox" hidden>
+    <summary>Diagnostics</summary>
+    <pre id="diag"></pre>
+    <div class="note">If counts look wrong, a site probably changed its markup. Send me this and the selectors in <code>providers.js</code> can be updated.</div>
+  </details>
+
+  <div class="row footer">
+    <button id="resetUsage" class="ghost" hidden>Reset prompt count</button>
+    <button id="clearAll" class="ghost">Clear all data</button>
   </div>
-  
-  <!-- Session Selector -->
-  <div class="session-selector">
-    <div style="display:flex; gap:8px; margin-bottom:6px;">
-      <select id="filterSelect">
-        <option value="today">Today</option>
-        <option value="7days">Last 7 Days</option>
-        <option value="all">All Sessions</option>
-      </select>
-      <button class="btn" id="refreshSessionsBtn" style="padding:6px 12px;">🔄</button>
-    </div>
-    <div id="sessionList">
-      <!-- sessions populated here -->
-    </div>
-    <div style="text-align:center; margin-top:4px;">
-      <button class="back-btn" id="backToCurrentBtn">← Back to Current</button>
-    </div>
-  </div>
-  
-  <div class="stats-card">
-    <div class="chat-title" id="chatTitle">No active chat</div>
-    <div class="stat-row">
-      <span class="stat-label">Tokens Used:</span>
-      <span class="stat-value" id="todayCount">0</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Token Limit:</span>
-      <span class="stat-value" id="dailyLimit">128K</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Remaining:</span>
-      <span class="stat-value" id="remainingCount">128K</span>
-    </div>
-    <div class="progress-container">
-      <div class="progress-header">
-        <span>Context Usage</span>
-        <span id="percentage">0%</span>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
-      </div>
-    </div>
-  </div>
-  
-  <div class="buttons">
-    <button class="btn" id="refreshBtn">🔄 Refresh</button>
-    <button class="btn btn-primary" id="resetBtn">🔄 Reset Chat</button>
-    <button class="btn" id="endChatBtn">⏹️ End Chat</button>
-    <button class="btn" id="addFileBtn">📎 Add File</button>
-  </div>
-  
-  <div class="files-container">
-    <div class="files-header">
-      <strong>Uploaded Files</strong>
-      <span class="file-tokens" id="fileTokenCount">0 tokens</span>
-    </div>
-    <div id="fileUploadsContainer" class="no-files">
-      No files uploaded in this chat
-    </div>
-  </div>
-  
-  <div class="status-bar">
-    Updated: <span id="updateTime">--:--</span>
-    <div id="warningMessage"></div>
-    <div id="historicalNote" class="historical-note" style="display:none;">Viewing historical session</div>
-  </div>
-  
+
+  <script src="providers.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
